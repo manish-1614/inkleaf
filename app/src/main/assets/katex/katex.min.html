@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="katex.min.css">
+    <style>
+        body {
+            margin: 0;
+            padding: 8px;
+            background-color: transparent;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            overflow: hidden;
+        }
+        #math-container {
+            width: 100%;
+            text-align: center;
+        }
+        .error {
+            color: #EF4444;
+            font-family: monospace;
+            font-size: 12px;
+        }
+    </style>
+    <script src="katex.min.js"></script>
+    <script>
+        function renderMath(latexCode, isInline) {
+            try {
+                const element = document.getElementById('math-container');
+                katex.render(latexCode, element, {
+                    displayMode: !isInline,
+                    throwOnError: true
+                });
+                
+                // Notify Android host of success and dimensions
+                if (window.AndroidBridge) {
+                    window.AndroidBridge.onRenderSuccess(element.scrollWidth, element.scrollHeight);
+                }
+            } catch (err) {
+                document.getElementById('math-container').innerHTML = '<div class="error">Failed to parse Math:<br>' + err.message + '</div>';
+                if (window.AndroidBridge) {
+                    window.AndroidBridge.onRenderError(err.message);
+                }
+            }
+        }
+    </script>
+</head>
+<body>
+    <div id="math-container">
+        <span style="font-family: sans-serif; font-size: 13px; color: #64748B;">Rendering formula...</span>
+    </div>
+</body>
+</html>

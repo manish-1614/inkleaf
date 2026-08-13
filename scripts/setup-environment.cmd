@@ -1,0 +1,3 @@
+@echo off
+echo Running Inkleaf Environment Setup...
+powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0setup-environment.ps1"
