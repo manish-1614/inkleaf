@@ -27,21 +27,25 @@
             border-radius: 4px;
         }
     </style>
-    <!-- Local vendor script placeholder for Mermaid.js -->
     <script src="mermaid.min.js"></script>
     <script>
         async function renderMermaid(code, theme) {
             const element = document.getElementById('diagram');
             try {
+                const mermaidObj = window.mermaid || (typeof mermaid !== 'undefined' ? mermaid : null);
+                if (!mermaidObj) {
+                    throw new Error("Mermaid library failed to load");
+                }
+
                 const config = {
                     startOnLoad: false,
                     theme: theme === 'dark' ? 'dark' : (theme === 'sepia' ? 'forest' : 'default'),
                     securityLevel: 'strict'
                 };
-                mermaid.initialize(config);
+                mermaidObj.initialize(config);
 
-                if (typeof mermaid.render === 'function') {
-                    const result = await mermaid.render('mermaid-svg-' + Math.floor(Math.random() * 10000), code);
+                if (typeof mermaidObj.render === 'function') {
+                    const result = await mermaidObj.render('mermaid-svg-' + Math.floor(Math.random() * 10000), code);
                     const svgCode = typeof result === 'string' ? result : (result.svg || '');
                     element.innerHTML = svgCode;
                     if (window.AndroidBridge) {
