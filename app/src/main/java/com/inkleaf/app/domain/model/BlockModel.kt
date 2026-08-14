@@ -7,17 +7,28 @@ sealed interface BlockModel {
     val sourceRange: SourceRange
 }
 
+data class StyledTextRun(
+    val text: String,
+    val isBold: Boolean = false,
+    val isItalic: Boolean = false,
+    val isStrikethrough: Boolean = false,
+    val isCode: Boolean = false,
+    val linkUrl: String? = null
+)
+
 data class ParagraphBlock(
     override val id: String,
     override val sourceRange: SourceRange,
-    val text: String
+    val text: String,
+    val runs: List<StyledTextRun> = emptyList()
 ) : BlockModel
 
 data class HeadingBlock(
     override val id: String,
     override val sourceRange: SourceRange,
     val level: Int,
-    val text: String
+    val text: String,
+    val runs: List<StyledTextRun> = emptyList()
 ) : BlockModel
 
 data class CodeBlock(
@@ -39,7 +50,8 @@ data class CalloutBlock(
     override val sourceRange: SourceRange,
     val type: String, // TIP, NOTE, WARNING, CAUTION
     val title: String?,
-    val content: String
+    val content: String,
+    val runs: List<StyledTextRun> = emptyList()
 ) : BlockModel
 
 data class MermaidBlock(
@@ -72,4 +84,18 @@ data class HorizontalRuleBlock(
     override val id: String,
     override val sourceRange: SourceRange
 ) : BlockModel
+
+data class ListItemBlock(
+    override val id: String,
+    override val sourceRange: SourceRange,
+    val text: String,
+    val level: Int, // Nesting depth (0 = top level)
+    val isOrdered: Boolean,
+    val number: Int?, // Item number if ordered list (1, 2, ...)
+    val isTask: Boolean,
+    val isChecked: Boolean,
+    val runs: List<StyledTextRun> = emptyList()
+) : BlockModel
+
+
 

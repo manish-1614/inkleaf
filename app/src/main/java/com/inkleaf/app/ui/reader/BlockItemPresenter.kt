@@ -6,6 +6,7 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.ClickableText
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
@@ -14,11 +15,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.inkleaf.app.domain.model.*
@@ -62,18 +65,40 @@ fun BlockItemPresenter(
                     else -> MaterialTheme.typography.titleMedium
                 }
                 val color = if (block.level <= 2) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondary
-                Text(
-                    text = highlightSearch(block.text, searchQuery),
-                    style = textStyle,
-                    color = color,
-                    modifier = Modifier.padding(top = 14.dp, bottom = 6.dp)
+                val uriHandler = LocalUriHandler.current
+                val annotatedText = renderStyledText(block.runs, block.text, searchQuery)
+                
+                ClickableText(
+                    text = annotatedText,
+                    style = textStyle.copy(color = color),
+                    modifier = Modifier.padding(top = 14.dp, bottom = 6.dp),
+                    onClick = { offset ->
+                        annotatedText.getStringAnnotations(tag = "URL", start = offset, end = offset)
+                            .firstOrNull()?.let { annotation ->
+                                try {
+                                    uriHandler.openUri(annotation.item)
+                                } catch (e: Exception) {
+                                }
+                            }
+                    }
                 )
             }
             is ParagraphBlock -> {
-                Text(
-                    text = highlightSearch(block.text, searchQuery),
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onSurface
+                val uriHandler = LocalUriHandler.current
+                val annotatedText = renderStyledText(block.runs, block.text, searchQuery)
+                
+                ClickableText(
+                    text = annotatedText,
+                    style = MaterialTheme.typography.bodyLarge.copy(color = MaterialTheme.colorScheme.onSurface),
+                    onClick = { offset ->
+                        annotatedText.getStringAnnotations(tag = "URL", start = offset, end = offset)
+                            .firstOrNull()?.let { annotation ->
+                                try {
+                                    uriHandler.openUri(annotation.item)
+                                } catch (e: Exception) {
+                                }
+                            }
+                    }
                 )
             }
             is CodeBlock -> {
@@ -189,6 +214,7 @@ fun BlockItemPresenter(
                                 isHeader = true,
                                 backgroundColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.8f)
                             )
+                            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                         }
                         block.rows.forEachIndexed { rowIndex, rowData ->
                             val rowBg = if (rowIndex % 2 == 1) {
@@ -203,10 +229,14 @@ fun BlockItemPresenter(
                                 isHeader = false,
                                 backgroundColor = rowBg
                             )
+                            if (rowIndex < block.rows.lastIndex) {
+                                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
+                            }
                         }
                     }
                 }
             }
+
             is CalloutBlock -> {
                 val accentColor = when (block.type) {
                     "NOTE" -> Color(0xFF2563EB)
@@ -223,7 +253,7 @@ fun BlockItemPresenter(
                         .clip(RoundedCornerShape(8.dp))
                         .background(cardBg)
                         .border(1.dp, accentColor.copy(alpha = 0.2f), RoundedCornerShape(8.dp))
-                        .intrinsicMinHeight()
+                        .height(IntrinsicSize.Min)
                 ) {
                     // Left Accent Indicator Bar
                     Box(
@@ -246,11 +276,21 @@ fun BlockItemPresenter(
                             )
                             Spacer(modifier = Modifier.height(4.dp))
                         }
-                        Text(
-                            text = highlightSearch(block.content, searchQuery),
-                            fontSize = 14.sp,
-                            lineHeight = 21.sp,
-                            color = MaterialTheme.colorScheme.onSurface
+                        val uriHandler = LocalUriHandler.current
+                        val annotatedText = renderStyledText(block.runs, block.content, searchQuery)
+                        
+                        ClickableText(
+                            text = annotatedText,
+                            style = MaterialTheme.typography.bodyLarge.copy(color = MaterialTheme.colorScheme.onSurface),
+                            onClick = { offset ->
+                                annotatedText.getStringAnnotations(tag = "URL", start = offset, end = offset)
+                                    .firstOrNull()?.let { annotation ->
+                                        try {
+                                            uriHandler.openUri(annotation.item)
+                                        } catch (e: Exception) {
+                                        }
+                                    }
+                            }
                         )
                     }
                 }
@@ -283,6 +323,13 @@ fun BlockItemPresenter(
                     Text("SVG Graphic content")
                 }
             }
+            is ListItemBlock -> {
+                ListItemRow(
+                    block = block,
+                    searchQuery = searchQuery,
+                    themeMode = themeMode
+                )
+            }
             is RawFallbackBlock -> {
                 Text(
                     text = highlightSearch(block.rawText, searchQuery),
@@ -295,6 +342,92 @@ fun BlockItemPresenter(
 }
 
 @Composable
+private fun ListItemRow(
+    block: ListItemBlock,
+    searchQuery: String,
+    themeMode: ReaderThemeMode
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(start = (block.level * 16).dp, top = 4.dp, bottom = 4.dp),
+        verticalAlignment = Alignment.Top
+    ) {
+        Box(
+            modifier = Modifier
+                .width(24.dp)
+                .padding(top = 2.dp),
+            contentAlignment = Alignment.TopStart
+        ) {
+            if (block.isTask) {
+                val checkboxColor = when (themeMode) {
+                    ReaderThemeMode.DARK -> Color(0xFF93C5FD)
+                    else -> MaterialTheme.colorScheme.primary
+                }
+                val boxBorderColor = if (block.isChecked) checkboxColor else MaterialTheme.colorScheme.onSurfaceVariant
+                
+                Box(
+                    modifier = Modifier
+                        .size(16.dp)
+                        .clip(RoundedCornerShape(4.dp))
+                        .background(if (block.isChecked) checkboxColor.copy(alpha = 0.2f) else Color.Transparent)
+                        .border(1.5.dp, boxBorderColor, RoundedCornerShape(4.dp)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (block.isChecked) {
+                        Text(
+                            "✓",
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = checkboxColor,
+                            lineHeight = 10.sp
+                        )
+                    }
+                }
+            } else if (block.isOrdered) {
+                Text(
+                    text = "${block.number}.",
+                    style = MaterialTheme.typography.bodyLarge,
+                    fontWeight = FontWeight.Medium,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            } else {
+                // Unordered bullet styling depending on nesting level
+                val bulletMarker = when (block.level % 3) {
+                    0 -> "•"
+                    1 -> "◦"
+                    else -> "▪"
+                }
+                Text(
+                    text = bulletMarker,
+                    style = MaterialTheme.typography.bodyLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            }
+        }
+        val uriHandler = LocalUriHandler.current
+        val annotatedText = renderStyledText(block.runs, block.text, searchQuery)
+        
+        ClickableText(
+            text = annotatedText,
+            style = MaterialTheme.typography.bodyLarge.copy(color = MaterialTheme.colorScheme.onSurface),
+            modifier = Modifier.weight(1f),
+            onClick = { offset ->
+                annotatedText.getStringAnnotations(tag = "URL", start = offset, end = offset)
+                    .firstOrNull()?.let { annotation ->
+                        try {
+                            uriHandler.openUri(annotation.item)
+                        } catch (e: Exception) {
+                        }
+                    }
+            }
+        )
+    }
+}
+
+
+@Composable
 private fun TableRow(
     cells: List<String>,
     columnWidths: List<Float>,
@@ -304,15 +437,13 @@ private fun TableRow(
 ) {
     Row(
         modifier = Modifier
-            .height(IntrinsicSize.Min)
             .background(backgroundColor)
+            .fillMaxWidth()
     ) {
         cells.forEachIndexed { index, cell ->
             Box(
                 modifier = Modifier
                     .width(columnWidths[index].dp)
-                    .fillMaxHeight()
-                    .border(0.5.dp, MaterialTheme.colorScheme.outlineVariant)
                     .padding(horizontal = 12.dp, vertical = if (isHeader) 10.dp else 8.dp)
             ) {
                 Text(
@@ -323,15 +454,14 @@ private fun TableRow(
                         MaterialTheme.colorScheme.onSurfaceVariant
                     } else {
                         MaterialTheme.colorScheme.onSurface
-                    }
+                    },
+                    softWrap = true
                 )
             }
         }
     }
 }
 
-// Helper Modifier extension for intrinsic height in Row child
-private fun Modifier.intrinsicMinHeight(): Modifier = this.height(IntrinsicSize.Min)
 
 // Basic search highlight helper converting matching queries into highlighted/colored styling
 fun highlightSearch(text: String, query: String): AnnotatedString {
@@ -351,4 +481,61 @@ fun highlightSearch(text: String, query: String): AnnotatedString {
         startIndex = text.indexOf(query, startIndex + 1, ignoreCase = true)
     }
     return builder.toAnnotatedString()
+}
+
+@Composable
+fun renderStyledText(
+    runs: List<StyledTextRun>,
+    fallbackText: String,
+    searchQuery: String
+): AnnotatedString {
+    if (runs.isEmpty()) {
+        return highlightSearch(fallbackText, searchQuery)
+    }
+    return remember(runs, searchQuery) {
+        val b = AnnotatedString.Builder()
+        runs.forEach { run ->
+            val start = b.length
+            b.append(run.text)
+            val end = b.length
+
+            val style = SpanStyle(
+                fontWeight = if (run.isBold) FontWeight.Bold else FontWeight.Normal,
+                fontStyle = if (run.isItalic) FontStyle.Italic else FontStyle.Normal,
+                textDecoration = if (run.isStrikethrough) TextDecoration.LineThrough else TextDecoration.None,
+                fontFamily = if (run.isCode) FontFamily.Monospace else FontFamily.Default,
+                color = if (run.linkUrl != null) Color(0xFF2563EB) else Color.Unspecified,
+                background = if (run.isCode) Color(0xFFE2E8F0) else Color.Transparent
+            )
+            b.addStyle(style, start, end)
+
+            if (run.linkUrl != null) {
+                b.addStringAnnotation(
+                    tag = "URL",
+                    annotation = run.linkUrl,
+                    start = start,
+                    end = end
+                )
+            }
+        }
+
+        // Highlight search matches
+        val fullText = b.toAnnotatedString().text
+        if (searchQuery.isNotEmpty()) {
+            var startIndex = fullText.indexOf(searchQuery, ignoreCase = true)
+            while (startIndex != -1) {
+                val endIndex = startIndex + searchQuery.length
+                b.addStyle(
+                    style = SpanStyle(
+                        background = Color.Yellow.copy(alpha = 0.6f),
+                        color = Color.Black
+                    ),
+                    start = startIndex,
+                    end = endIndex
+                )
+                startIndex = fullText.indexOf(searchQuery, startIndex + 1, ignoreCase = true)
+            }
+        }
+        b.toAnnotatedString()
+    }
 }

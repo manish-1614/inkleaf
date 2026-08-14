@@ -4,3 +4,8 @@ app/build/
 .idea/
 local.properties
 *.tmp
+
+# Exclude specifications and evidence files
+Inkleaf_PRD_TAD_v2.1_Elite_Build_Signoff.docx
+Inkleaf_PRD_TAD_v2.1_Elite_Build_Signoff.md
+evidence/

@@ -9,6 +9,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -40,6 +41,7 @@ fun ReaderScreen(
     val blocks = remember(rawContent) { MarkdownBlockParser().parseToBlocks(rawContent) }
     
     val listState = rememberLazyListState()
+    val snackbarHostState = remember { SnackbarHostState() }
     
     var searchQuery by remember { mutableStateOf("") }
     var isSearchActive by remember { mutableStateOf(false) }
@@ -55,6 +57,7 @@ fun ReaderScreen(
                     is com.inkleaf.app.domain.model.ParagraphBlock -> block.text.contains(searchQuery, ignoreCase = true)
                     is com.inkleaf.app.domain.model.CodeBlock -> block.code.contains(searchQuery, ignoreCase = true)
                     is com.inkleaf.app.domain.model.CalloutBlock -> block.content.contains(searchQuery, ignoreCase = true)
+                    is com.inkleaf.app.domain.model.ListItemBlock -> block.text.contains(searchQuery, ignoreCase = true)
                     else -> false
                 }
                 if (match) index else null
@@ -71,6 +74,23 @@ fun ReaderScreen(
                 val totalItems = blocks.size
                 visibleIndex.toFloat() / totalItems.toFloat()
             }
+        }
+    }
+
+    // Calculate active heading ID based on first visible block in listState
+    val activeHeadingId by remember(blocks, listState) {
+        derivedStateOf {
+            val firstVisibleIndex = listState.firstVisibleItemIndex
+            var lastHeading: HeadingBlock? = null
+            for (i in 0..firstVisibleIndex) {
+                if (i < blocks.size) {
+                    val block = blocks[i]
+                    if (block is HeadingBlock) {
+                        lastHeading = block
+                    }
+                }
+            }
+            lastHeading?.id
         }
     }
 
@@ -106,12 +126,26 @@ fun ReaderScreen(
 
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
 
+    fun reloadDocument() {
+        coroutineScope.launch {
+            try {
+                metadata = safRepository.getDocumentMetadata(documentUri)
+                rawContent = safRepository.readDocumentContent(documentUri)
+                listState.scrollToItem(0)
+                snackbarHostState.showSnackbar("Document reloaded")
+            } catch (e: Exception) {
+                snackbarHostState.showSnackbar("Failed to reload: ${e.localizedMessage}")
+            }
+        }
+    }
+
     ModalNavigationDrawer(
         drawerState = drawerState,
         drawerContent = {
             ModalDrawerSheet {
                 TocDrawerContent(
                     headings = headings,
+                    activeHeadingId = activeHeadingId,
                     onHeadingClick = { headingId ->
                         headingIndices[headingId]?.let { targetBlockIndex ->
                             coroutineScope.launch {
@@ -125,8 +159,10 @@ fun ReaderScreen(
         }
     ) {
         Scaffold(
+            snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
             topBar = {
                 if (isSearchActive) {
+
                     InDocumentSearchBar(
                         query = searchQuery,
                         onQueryChange = {
@@ -171,6 +207,9 @@ fun ReaderScreen(
                             }
                         },
                         actions = {
+                            IconButton(onClick = { reloadDocument() }) {
+                                Icon(Icons.Default.Refresh, contentDescription = "Refresh", tint = MaterialTheme.colorScheme.primary)
+                            }
                             IconButton(onClick = { isSearchActive = true }) {
                                 Icon(Icons.Default.Search, contentDescription = "Search", tint = MaterialTheme.colorScheme.primary)
                             }
