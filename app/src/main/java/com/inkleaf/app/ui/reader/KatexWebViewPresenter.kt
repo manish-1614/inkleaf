@@ -5,16 +5,19 @@ import android.graphics.Color as AndroidColor
 import android.webkit.JavascriptInterface
 import android.webkit.WebView
 import android.webkit.WebViewClient
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import kotlinx.coroutines.delay
 
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
@@ -25,6 +28,18 @@ fun KatexWebViewPresenter(
 ) {
     var webViewHeight by remember { mutableStateOf(50.dp) }
     var renderError by remember { mutableStateOf<String?>(null) }
+    var isLoading by remember { mutableStateOf(true) }
+
+    // 5-second render timeout — resets if latexFormula changes
+    LaunchedEffect(latexFormula) {
+        isLoading = true
+        renderError = null
+        delay(5_000L)
+        if (isLoading) {
+            renderError = "Math render timeout — formula shown as text"
+            isLoading = false
+        }
+    }
 
     if (renderError != null) {
         // Safe graceful text fallback on parsing error
@@ -37,9 +52,13 @@ fun KatexWebViewPresenter(
             modifier = modifier
                 .fillMaxWidth()
                 .background(MaterialTheme.colorScheme.background)
-                .height(webViewHeight)
+                .height(webViewHeight),
+            contentAlignment = Alignment.TopCenter
         ) {
             AndroidView(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(webViewHeight),
                 factory = { context ->
                     WebView(context).apply {
                         setBackgroundColor(AndroidColor.TRANSPARENT)
@@ -47,6 +66,8 @@ fun KatexWebViewPresenter(
                         settings.blockNetworkLoads = true
                         settings.allowFileAccess = false
                         settings.allowContentAccess = false
+                        settings.domStorageEnabled = false
+                        settings.cacheMode = android.webkit.WebSettings.LOAD_NO_CACHE
 
                         webViewClient = object : WebViewClient() {
                             override fun onPageFinished(view: WebView?, url: String?) {
@@ -64,11 +85,13 @@ fun KatexWebViewPresenter(
                                 val density = resources.displayMetrics.density
                                 val computedHeightDp = (height / density).coerceAtLeast(40f).coerceAtMost(250f)
                                 webViewHeight = computedHeightDp.dp
+                                isLoading = false
                             }
 
                             @JavascriptInterface
                             fun onRenderError(error: String) {
                                 renderError = error
+                                isLoading = false
                             }
                         }, "AndroidBridge")
 
@@ -83,6 +106,14 @@ fun KatexWebViewPresenter(
                     webView.destroy()
                 }
             )
+
+            // Loading indicator — hidden once KaTeX render succeeds or errors out
+            if (isLoading) {
+                LinearProgressIndicator(
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
         }
     }
 }
+

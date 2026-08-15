@@ -7,6 +7,7 @@ import androidx.datastore.preferences.preferencesDataStore
 import com.inkleaf.app.ui.theme.parseReaderThemeMode
 import com.inkleaf.app.ui.theme.ReaderThemeMode
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 
 private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "reader_preferences")
@@ -36,7 +37,7 @@ class ReaderPreferencesRepository(private val context: Context) {
     val themeFlow: Flow<ReaderThemeMode> = context.dataStore.data.map { preferences ->
         val modeStr = preferences[THEME_KEY] ?: ReaderThemeMode.SEPIA.name
         parseReaderThemeMode(modeStr)
-    }
+    }.distinctUntilChanged()
 
     suspend fun setThemeMode(mode: ReaderThemeMode) {
         context.dataStore.edit { preferences ->
@@ -54,7 +55,7 @@ class ReaderPreferencesRepository(private val context: Context) {
                 RecentItem(parts[0], parts[1], parts[2].toLongOrNull() ?: 0L)
             } else null
         }.sortedByDescending { it.timestamp }
-    }
+    }.distinctUntilChanged()
 
     suspend fun addRecentDocument(uriString: String, displayName: String) {
         context.dataStore.edit { preferences ->
@@ -97,7 +98,7 @@ class ReaderPreferencesRepository(private val context: Context) {
                 FavoriteItem(parts[0], parts[1], parts[2].toLongOrNull() ?: 0L)
             } else null
         }.sortedByDescending { it.timestamp }
-    }
+    }.distinctUntilChanged()
 
     suspend fun toggleFavorite(uriString: String, displayName: String) {
         context.dataStore.edit { preferences ->
@@ -122,14 +123,18 @@ class ReaderPreferencesRepository(private val context: Context) {
     // Reading Position Per Document
     fun getScrollPosition(fingerprint: String): Flow<Int> = context.dataStore.data.map { preferences ->
         preferences[scrollOffsetKey(fingerprint)] ?: 0
-    }
+    }.distinctUntilChanged()
 
     suspend fun saveScrollPosition(fingerprint: String, offset: Int, lastHeadingId: String?) {
-        context.dataStore.edit { preferences ->
-            preferences[scrollOffsetKey(fingerprint)] = offset
-            if (lastHeadingId != null) {
-                preferences[lastHeadingKey(fingerprint)] = lastHeadingId
+        try {
+            context.dataStore.edit { preferences ->
+                preferences[scrollOffsetKey(fingerprint)] = offset
+                if (lastHeadingId != null) {
+                    preferences[lastHeadingKey(fingerprint)] = lastHeadingId
+                }
             }
+        } catch (e: Exception) {
+            // Silently swallow DataStore contention errors to avoid crashing the coroutine.
         }
     }
 }

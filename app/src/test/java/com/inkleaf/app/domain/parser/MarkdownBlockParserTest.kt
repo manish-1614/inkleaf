@@ -45,37 +45,46 @@ class MarkdownBlockParserTest {
         val blocks = parser.parseToBlocks(markdown)
         val listItems = blocks.filterIsInstance<ListItemBlock>()
 
-        assertEquals(6, listItems.size)
+        // The root level should contain exactly 2 list items ("Fruit" and "Vegetables")
+        assertEquals(2, listItems.size)
 
         // "- Fruit"
-        assertEquals("Fruit", listItems[0].text)
-        assertEquals(0, listItems[0].level)
-        assertFalse(listItems[0].isOrdered)
+        val fruitItem = listItems[0]
+        assertEquals("Fruit", fruitItem.text)
+        assertEquals(0, fruitItem.level)
+        assertFalse(fruitItem.isOrdered)
+        
+        // Children of Fruit: "Apple" and "Orange"
+        val fruitChildren = fruitItem.children.filterIsInstance<ListItemBlock>()
+        assertEquals(2, fruitChildren.size)
+        
+        assertEquals("Apple", fruitChildren[0].text)
+        assertEquals(1, fruitChildren[0].level)
+        assertFalse(fruitChildren[0].isOrdered)
 
-        // "  - Apple"
-        assertEquals("Apple", listItems[1].text)
-        assertEquals(1, listItems[1].level)
-        assertFalse(listItems[1].isOrdered)
-
-        // "  - Orange"
-        assertEquals("Orange", listItems[2].text)
-        assertEquals(1, listItems[2].level)
+        assertEquals("Orange", fruitChildren[1].text)
+        assertEquals(1, fruitChildren[1].level)
+        assertFalse(fruitChildren[1].isOrdered)
 
         // "- Vegetables"
-        assertEquals("Vegetables", listItems[3].text)
-        assertEquals(0, listItems[3].level)
+        val vegetableItem = listItems[1]
+        assertEquals("Vegetables", vegetableItem.text)
+        assertEquals(0, vegetableItem.level)
+        assertFalse(vegetableItem.isOrdered)
 
-        // "  1. Carrot"
-        assertEquals("Carrot", listItems[4].text)
-        assertEquals(1, listItems[4].level)
-        assertTrue(listItems[4].isOrdered)
-        assertEquals(1, listItems[4].number)
+        // Children of Vegetables: "Carrot" and "Potato"
+        val vegetableChildren = vegetableItem.children.filterIsInstance<ListItemBlock>()
+        assertEquals(2, vegetableChildren.size)
 
-        // "  2. Potato"
-        assertEquals("Potato", listItems[5].text)
-        assertEquals(1, listItems[5].level)
-        assertTrue(listItems[5].isOrdered)
-        assertEquals(2, listItems[5].number)
+        assertEquals("Carrot", vegetableChildren[0].text)
+        assertEquals(1, vegetableChildren[0].level)
+        assertTrue(vegetableChildren[0].isOrdered)
+        assertEquals(1, vegetableChildren[0].number)
+
+        assertEquals("Potato", vegetableChildren[1].text)
+        assertEquals(1, vegetableChildren[1].level)
+        assertTrue(vegetableChildren[1].isOrdered)
+        assertEquals(2, vegetableChildren[1].number)
     }
 
     @Test
@@ -116,5 +125,91 @@ class MarkdownBlockParserTest {
         assertTrue(runs.any { it.text == "code" && it.isCode })
         assertTrue(runs.any { it.text == "strike" && it.isStrikethrough })
         assertTrue(runs.any { it.text == "link" && it.linkUrl == "url" })
+    }
+
+    @Test
+    fun `parses recursive blockquotes and callouts correctly`() {
+        val markdown = """
+            > [!NOTE]
+            > Outer quote
+            >
+            > > Nested quote
+        """.trimIndent()
+
+        val blocks = parser.parseToBlocks(markdown)
+        val callouts = blocks.filterIsInstance<com.inkleaf.app.domain.model.CalloutBlock>()
+
+        assertEquals(1, callouts.size)
+        val outerCallout = callouts[0]
+        assertEquals("NOTE", outerCallout.type)
+        assertEquals("NOTE", outerCallout.title)
+
+        // Check children
+        assertEquals(2, outerCallout.children.size)
+        assertTrue(outerCallout.children[0] is com.inkleaf.app.domain.model.ParagraphBlock)
+        assertEquals("Outer quote", (outerCallout.children[0] as com.inkleaf.app.domain.model.ParagraphBlock).text)
+
+        assertTrue(outerCallout.children[1] is com.inkleaf.app.domain.model.CalloutBlock)
+        val innerCallout = outerCallout.children[1] as com.inkleaf.app.domain.model.CalloutBlock
+        assertEquals("QUOTE", innerCallout.type)
+        assertEquals("Nested quote", (innerCallout.children[0] as com.inkleaf.app.domain.model.ParagraphBlock).text)
+    }
+
+    @Test
+    fun `parses list items with nested block children correctly`() {
+        val markdown = """
+            - First item
+              
+              Continuation paragraph
+              
+              ```kotlin
+              val x = 1
+              ```
+        """.trimIndent()
+
+        val blocks = parser.parseToBlocks(markdown)
+        val listItems = blocks.filterIsInstance<ListItemBlock>()
+
+        assertEquals(1, listItems.size)
+        val listItem = listItems[0]
+        assertEquals("First item", listItem.text)
+
+        // Children should contain the paragraph and code block
+        assertEquals(2, listItem.children.size)
+        assertTrue(listItem.children[0] is com.inkleaf.app.domain.model.ParagraphBlock)
+        assertEquals("Continuation paragraph", (listItem.children[0] as com.inkleaf.app.domain.model.ParagraphBlock).text)
+
+        assertTrue(listItem.children[1] is com.inkleaf.app.domain.model.CodeBlock)
+        assertEquals("kotlin", (listItem.children[1] as com.inkleaf.app.domain.model.CodeBlock).language)
+    }
+
+    @Test
+    fun `parses HTML inline mark tags as highlighted runs`() {
+        val markdown = "This contains <mark>highlighted HTML</mark>."
+        val blocks = parser.parseToBlocks(markdown)
+        val paragraph = blocks.filterIsInstance<com.inkleaf.app.domain.model.ParagraphBlock>().first()
+
+        val runs = paragraph.runs
+        assertTrue(runs.any { it.text == "highlighted HTML" && it.isHighlighted })
+    }
+
+    @Test
+    fun `parses standalone image references as ImageBlocks`() {
+        val markdown = "![Sample image](https://placehold.co/640x360/png \"Image title\")"
+        val blocks = parser.parseToBlocks(markdown)
+
+        val images = blocks.filterIsInstance<com.inkleaf.app.domain.model.ImageBlock>()
+        assertEquals(1, images.size)
+        assertEquals("https://placehold.co/640x360/png", images[0].url)
+        assertEquals("Sample image", images[0].altText)
+        assertEquals("Image title", images[0].title)
+    }
+
+    @Test
+    fun `parses full rendering test suite without crashing`() {
+        val file = java.io.File("C:\\Luminary\\Projects\\inkleaf\\docs\\sample\\Inkleaf_Markdown_Rendering_Test_Suite.md")
+        val content = file.readText()
+        val blocks = parser.parseToBlocks(content)
+        assertTrue(blocks.isNotEmpty())
     }
 }

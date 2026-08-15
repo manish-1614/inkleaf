@@ -26,6 +26,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import kotlinx.coroutines.delay
 
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
@@ -37,6 +38,21 @@ fun MermaidWebViewPresenter(
     var webViewHeight by remember { mutableStateOf(180.dp) }
     var renderError by remember { mutableStateOf<String?>(null) }
     var isExpanded by remember { mutableStateOf(false) }
+    var isLoading by remember { mutableStateOf(true) }
+
+    // Tracks the last key passed to evaluateJavascript so update() avoids redundant re-renders
+    var lastRenderedKey by remember { mutableStateOf("") }
+
+    // 5-second render timeout — resets whenever diagramCode or themeMode changes
+    LaunchedEffect(diagramCode, themeMode) {
+        isLoading = true
+        renderError = null
+        delay(5_000L)
+        if (isLoading) {
+            renderError = "Render timeout — diagram source shown below"
+            isLoading = false
+        }
+    }
 
     if (renderError != null) {
         // Compact "Diagram unavailable" card with expandable source section
@@ -132,13 +148,18 @@ fun MermaidWebViewPresenter(
             }
         }
     } else {
+        // wrapContentHeight() ensures the Box never collapses to zero before height is resolved
         Box(
             modifier = modifier
                 .fillMaxWidth()
-                .background(MaterialTheme.colorScheme.background)
-                .height(webViewHeight)
+                .wrapContentHeight()
+                .background(MaterialTheme.colorScheme.background),
+            contentAlignment = Alignment.TopCenter
         ) {
             AndroidView(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(webViewHeight),
                 factory = { context ->
                     WebView(context).apply {
                         setBackgroundColor(AndroidColor.TRANSPARENT)
@@ -146,14 +167,18 @@ fun MermaidWebViewPresenter(
                         settings.blockNetworkLoads = true
                         settings.allowFileAccess = false
                         settings.allowContentAccess = false
+                        settings.domStorageEnabled = false
+                        settings.cacheMode = android.webkit.WebSettings.LOAD_NO_CACHE
 
                         webViewClient = object : WebViewClient() {
                             override fun onPageFinished(view: WebView?, url: String?) {
                                 val escapedCode = diagramCode.replace("`", "\\`").replace("\\", "\\\\")
+                                val key = "$diagramCode|$themeMode"
                                 view?.evaluateJavascript(
                                     "renderMermaid(`$escapedCode`, '$themeMode');",
                                     null
                                 )
+                                lastRenderedKey = key
                             }
                         }
 
@@ -163,11 +188,13 @@ fun MermaidWebViewPresenter(
                                 val density = resources.displayMetrics.density
                                 val computedHeightDp = (height / density).coerceAtLeast(100f).coerceAtMost(500f)
                                 webViewHeight = computedHeightDp.dp
+                                isLoading = false
                             }
 
                             @JavascriptInterface
                             fun onRenderError(error: String) {
                                 renderError = error
+                                isLoading = false
                             }
                         }, "AndroidBridge")
 
@@ -175,13 +202,30 @@ fun MermaidWebViewPresenter(
                     }
                 },
                 update = { webView ->
-                    // Handle dynamic updates if code or theme changes
+                    // Re-render only when diagramCode or themeMode changed after page was first loaded
+                    val key = "$diagramCode|$themeMode"
+                    if (key != lastRenderedKey && lastRenderedKey.isNotEmpty()) {
+                        lastRenderedKey = key
+                        isLoading = true
+                        val escapedCode = diagramCode.replace("`", "\\`").replace("\\", "\\\\")
+                        webView.evaluateJavascript(
+                            "renderMermaid(`$escapedCode`, '$themeMode');",
+                            null
+                        )
+                    }
                 },
                 onRelease = { webView ->
                     webView.stopLoading()
                     webView.destroy()
                 }
             )
+
+            // Skeleton progress bar — hidden once render succeeds or errors out
+            if (isLoading) {
+                LinearProgressIndicator(
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
         }
     }
 }

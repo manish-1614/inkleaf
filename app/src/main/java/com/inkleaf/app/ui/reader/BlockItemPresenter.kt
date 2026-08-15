@@ -21,12 +21,17 @@ import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.BaselineShift
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.unit.TextUnit
 import com.inkleaf.app.domain.model.*
+import com.inkleaf.app.domain.parser.SyntaxHighlighter
 import com.inkleaf.app.domain.parser.normalizeCodeLanguage
 import com.inkleaf.app.ui.theme.ReaderThemeMode
+import coil.compose.SubcomposeAsyncImage
 
 enum class CodeBlockCopyAnchor {
     End
@@ -66,7 +71,7 @@ fun BlockItemPresenter(
                 }
                 val color = if (block.level <= 2) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondary
                 val uriHandler = LocalUriHandler.current
-                val annotatedText = renderStyledText(block.runs, block.text, searchQuery)
+                val annotatedText = renderStyledText(block.runs, block.text, searchQuery, themeMode)
                 
                 ClickableText(
                     text = annotatedText,
@@ -85,7 +90,7 @@ fun BlockItemPresenter(
             }
             is ParagraphBlock -> {
                 val uriHandler = LocalUriHandler.current
-                val annotatedText = renderStyledText(block.runs, block.text, searchQuery)
+                val annotatedText = renderStyledText(block.runs, block.text, searchQuery, themeMode)
                 
                 ClickableText(
                     text = annotatedText,
@@ -109,10 +114,8 @@ fun BlockItemPresenter(
                 val languageLabel = normalizeCodeLanguage(block.language)
                 val headerLayout = codeBlockHeaderLayout(languageLabel)
 
-                // Dedicated Dark Terminal Container across all theme modes for high-contrast syntax display
                 val codeCardBg = Color(0xFF0F172A)
                 val headerBg = Color(0xFF1E293B)
-                val codeTextColor = Color(0xFFF1F5F9)
                 val lineNumberColor = Color(0xFF64748B)
 
                 Column(
@@ -122,7 +125,6 @@ fun BlockItemPresenter(
                         .background(codeCardBg)
                         .border(1.dp, Color(0xFF334155), RoundedCornerShape(8.dp))
                 ) {
-                    // Header Bar with Language Badge and Copy Button
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -137,7 +139,7 @@ fun BlockItemPresenter(
                                 color = Color(0xFF2563EB),
                                 modifier = Modifier.padding(vertical = 2.dp)
                             ) {
-                                Text(
+                                  Text(
                                     text = languageLabel.uppercase(),
                                     fontSize = 11.sp,
                                     fontWeight = FontWeight.Bold,
@@ -157,7 +159,6 @@ fun BlockItemPresenter(
                     }
                     HorizontalDivider(color = Color(0xFF334155))
 
-                    // Code Body with Horizontal Scroll & Optional Line Numbers
                     Box(modifier = Modifier.fillMaxWidth()) {
                         Row(
                             modifier = Modifier
@@ -182,11 +183,10 @@ fun BlockItemPresenter(
                                 }
                             }
                             Text(
-                                text = highlightSearch(block.code, searchQuery),
+                                text = SyntaxHighlighter.highlight(block.code, block.language, searchQuery),
                                 fontFamily = FontFamily.Monospace,
                                 fontSize = 13.sp,
-                                lineHeight = 20.sp,
-                                color = codeTextColor
+                                lineHeight = 20.sp
                             )
                         }
                     }
@@ -212,7 +212,8 @@ fun BlockItemPresenter(
                                 columnWidths = columnWidths,
                                 searchQuery = searchQuery,
                                 isHeader = true,
-                                backgroundColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.8f)
+                                backgroundColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.8f),
+                                themeMode = themeMode
                             )
                             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                         }
@@ -227,7 +228,8 @@ fun BlockItemPresenter(
                                 columnWidths = columnWidths,
                                 searchQuery = searchQuery,
                                 isHeader = false,
-                                backgroundColor = rowBg
+                                backgroundColor = rowBg,
+                                themeMode = themeMode
                             )
                             if (rowIndex < block.rows.lastIndex) {
                                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
@@ -236,7 +238,6 @@ fun BlockItemPresenter(
                     }
                 }
             }
-
             is CalloutBlock -> {
                 val accentColor = when (block.type) {
                     "NOTE" -> Color(0xFF2563EB)
@@ -255,7 +256,6 @@ fun BlockItemPresenter(
                         .border(1.dp, accentColor.copy(alpha = 0.2f), RoundedCornerShape(8.dp))
                         .height(IntrinsicSize.Min)
                 ) {
-                    // Left Accent Indicator Bar
                     Box(
                         modifier = Modifier
                             .width(4.dp)
@@ -276,22 +276,14 @@ fun BlockItemPresenter(
                             )
                             Spacer(modifier = Modifier.height(4.dp))
                         }
-                        val uriHandler = LocalUriHandler.current
-                        val annotatedText = renderStyledText(block.runs, block.content, searchQuery)
                         
-                        ClickableText(
-                            text = annotatedText,
-                            style = MaterialTheme.typography.bodyLarge.copy(color = MaterialTheme.colorScheme.onSurface),
-                            onClick = { offset ->
-                                annotatedText.getStringAnnotations(tag = "URL", start = offset, end = offset)
-                                    .firstOrNull()?.let { annotation ->
-                                        try {
-                                            uriHandler.openUri(annotation.item)
-                                        } catch (e: Exception) {
-                                        }
-                                    }
-                            }
-                        )
+                        block.children.forEach { child ->
+                            BlockItemPresenter(
+                                block = child,
+                                searchQuery = searchQuery,
+                                themeMode = themeMode
+                            )
+                        }
                     }
                 }
             }
@@ -323,6 +315,14 @@ fun BlockItemPresenter(
                     Text("SVG Graphic content")
                 }
             }
+            is ImageBlock -> {
+                ImageItemPresenter(
+                    url = block.url,
+                    altText = block.altText,
+                    title = block.title,
+                    themeMode = themeMode
+                )
+            }
             is ListItemBlock -> {
                 ListItemRow(
                     block = block,
@@ -338,6 +338,92 @@ fun BlockItemPresenter(
                 )
             }
         }
+    }
+}
+
+@Composable
+fun ImageItemPresenter(
+    url: String,
+    altText: String?,
+    title: String?,
+    themeMode: ReaderThemeMode,
+    modifier: Modifier = Modifier
+) {
+    val isDark = themeMode == ReaderThemeMode.DARK
+    val placeholderBg = if (isDark) Color(0xFF1E293B) else Color(0xFFF1F5F9)
+    val placeholderBorder = if (isDark) Color(0xFF334155) else Color(0xFFE2E8F0)
+    val textColor = if (isDark) Color(0xFF94A3B8) else Color(0xFF475569)
+
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(vertical = 8.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        SubcomposeAsyncImage(
+            model = url,
+            contentDescription = altText ?: "Markdown Image",
+            loading = {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(180.dp)
+                        .background(placeholderBg, RoundedCornerShape(8.dp))
+                        .border(1.dp, placeholderBorder, RoundedCornerShape(8.dp)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    CircularProgressIndicator(strokeWidth = 2.dp, modifier = Modifier.size(24.dp))
+                }
+            },
+            error = {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(placeholderBg, RoundedCornerShape(8.dp))
+                        .border(1.dp, placeholderBorder, RoundedCornerShape(8.dp))
+                        .padding(16.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text(
+                        text = "🖼️ Image Reference",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 13.sp,
+                        color = textColor
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = altText ?: url,
+                        fontSize = 12.sp,
+                        fontStyle = FontStyle.Italic,
+                        color = textColor.copy(alpha = 0.8f)
+                    )
+                    if (title != null) {
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = title,
+                            fontSize = 11.sp,
+                            color = textColor.copy(alpha = 0.6f)
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Surface(
+                        shape = RoundedCornerShape(4.dp),
+                        color = if (isDark) Color(0xFF334155) else Color(0xFFE2E8F0)
+                    ) {
+                        Text(
+                            text = "Offline Mode / Remote Source",
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = textColor,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                        )
+                    }
+                }
+            },
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(8.dp))
+        )
     }
 }
 
@@ -392,7 +478,6 @@ private fun ListItemRow(
                     color = MaterialTheme.colorScheme.onSurface
                 )
             } else {
-                // Unordered bullet styling depending on nesting level
                 val bulletMarker = when (block.level % 3) {
                     0 -> "•"
                     1 -> "◦"
@@ -406,34 +491,46 @@ private fun ListItemRow(
                 )
             }
         }
-        val uriHandler = LocalUriHandler.current
-        val annotatedText = renderStyledText(block.runs, block.text, searchQuery)
         
-        ClickableText(
-            text = annotatedText,
-            style = MaterialTheme.typography.bodyLarge.copy(color = MaterialTheme.colorScheme.onSurface),
-            modifier = Modifier.weight(1f),
-            onClick = { offset ->
-                annotatedText.getStringAnnotations(tag = "URL", start = offset, end = offset)
-                    .firstOrNull()?.let { annotation ->
-                        try {
-                            uriHandler.openUri(annotation.item)
-                        } catch (e: Exception) {
+        val uriHandler = LocalUriHandler.current
+        val annotatedText = renderStyledText(block.runs, block.text, searchQuery, themeMode)
+        
+        Column(modifier = Modifier.weight(1f)) {
+            ClickableText(
+                text = annotatedText,
+                style = MaterialTheme.typography.bodyLarge.copy(color = MaterialTheme.colorScheme.onSurface),
+                onClick = { offset ->
+                    annotatedText.getStringAnnotations(tag = "URL", start = offset, end = offset)
+                        .firstOrNull()?.let { annotation ->
+                            try {
+                                uriHandler.openUri(annotation.item)
+                            } catch (e: Exception) {
+                            }
                         }
-                    }
+                }
+            )
+            if (block.children.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(4.dp))
+                block.children.forEach { child ->
+                    BlockItemPresenter(
+                        block = child,
+                        searchQuery = searchQuery,
+                        themeMode = themeMode
+                    )
+                }
             }
-        )
+        }
     }
 }
 
-
 @Composable
 private fun TableRow(
-    cells: List<String>,
+    cells: List<TableCellModel>,
     columnWidths: List<Float>,
     searchQuery: String,
     isHeader: Boolean,
-    backgroundColor: Color
+    backgroundColor: Color,
+    themeMode: ReaderThemeMode
 ) {
     Row(
         modifier = Modifier
@@ -446,8 +543,14 @@ private fun TableRow(
                     .width(columnWidths[index].dp)
                     .padding(horizontal = 12.dp, vertical = if (isHeader) 10.dp else 8.dp)
             ) {
+                val textAlign = when (cell.alignment) {
+                    TableCellAlignment.LEFT -> TextAlign.Start
+                    TableCellAlignment.CENTER -> TextAlign.Center
+                    TableCellAlignment.RIGHT -> TextAlign.End
+                }
+                val annotatedText = renderStyledText(cell.runs, cell.text, searchQuery, themeMode)
                 Text(
-                    text = highlightSearch(cell, searchQuery),
+                    text = annotatedText,
                     fontWeight = if (isHeader) FontWeight.Bold else FontWeight.Normal,
                     fontSize = 14.sp,
                     color = if (isHeader) {
@@ -455,15 +558,14 @@ private fun TableRow(
                     } else {
                         MaterialTheme.colorScheme.onSurface
                     },
-                    softWrap = true
+                    textAlign = textAlign,
+                    modifier = Modifier.fillMaxWidth()
                 )
             }
         }
     }
 }
 
-
-// Basic search highlight helper converting matching queries into highlighted/colored styling
 fun highlightSearch(text: String, query: String): AnnotatedString {
     if (query.isEmpty()) return AnnotatedString(text)
     val builder = AnnotatedString.Builder(text)
@@ -487,25 +589,67 @@ fun highlightSearch(text: String, query: String): AnnotatedString {
 fun renderStyledText(
     runs: List<StyledTextRun>,
     fallbackText: String,
-    searchQuery: String
+    searchQuery: String,
+    themeMode: ReaderThemeMode
 ): AnnotatedString {
     if (runs.isEmpty()) {
         return highlightSearch(fallbackText, searchQuery)
     }
-    return remember(runs, searchQuery) {
+    return remember(runs, searchQuery, themeMode) {
         val b = AnnotatedString.Builder()
         runs.forEach { run ->
             val start = b.length
             b.append(run.text)
             val end = b.length
 
+            val (codeBg, codeColor) = when (themeMode) {
+                ReaderThemeMode.DARK -> Color(0xFF1E293B) to Color(0xFF93C5FD)
+                ReaderThemeMode.SEPIA -> Color(0xFFE2DAC8) to Color(0xFF573A25)
+                else -> Color(0xFFE2E8F0) to Color(0xFF1E293B)
+            }
+
+            val (highlightBg, highlightColor) = when (themeMode) {
+                ReaderThemeMode.DARK -> Color(0xFF78350F) to Color(0xFFFDE68A)
+                ReaderThemeMode.SEPIA -> Color(0xFFFDE047) to Color(0xFF451A03)
+                else -> Color(0xFFFEF08A) to Color(0xFF713F12)
+            }
+
+            val textDecor = when {
+                run.isStrikethrough && run.isUnderline -> TextDecoration.combine(listOf(TextDecoration.LineThrough, TextDecoration.Underline))
+                run.isStrikethrough -> TextDecoration.LineThrough
+                run.isUnderline -> TextDecoration.Underline
+                else -> TextDecoration.None
+            }
+
+            val baseShift = when {
+                run.isSubscript -> BaselineShift.Subscript
+                run.isSuperscript -> BaselineShift.Superscript
+                else -> BaselineShift.None
+            }
+
+            val fontSize = when {
+                run.isSubscript || run.isSuperscript -> 10.sp
+                else -> TextUnit.Unspecified
+            }
+
             val style = SpanStyle(
                 fontWeight = if (run.isBold) FontWeight.Bold else FontWeight.Normal,
                 fontStyle = if (run.isItalic) FontStyle.Italic else FontStyle.Normal,
-                textDecoration = if (run.isStrikethrough) TextDecoration.LineThrough else TextDecoration.None,
-                fontFamily = if (run.isCode) FontFamily.Monospace else FontFamily.Default,
-                color = if (run.linkUrl != null) Color(0xFF2563EB) else Color.Unspecified,
-                background = if (run.isCode) Color(0xFFE2E8F0) else Color.Transparent
+                textDecoration = textDecor,
+                fontFamily = if (run.isCode || run.isKbd) FontFamily.Monospace else FontFamily.Default,
+                color = when {
+                    run.linkUrl != null -> Color(0xFF2563EB)
+                    run.isHighlighted -> highlightColor
+                    run.isCode -> codeColor
+                    else -> Color.Unspecified
+                },
+                background = when {
+                    run.isHighlighted -> highlightBg
+                    run.isCode || run.isKbd -> codeBg
+                    else -> Color.Transparent
+                },
+                baselineShift = baseShift,
+                fontSize = fontSize
             )
             b.addStyle(style, start, end)
 
@@ -519,7 +663,6 @@ fun renderStyledText(
             }
         }
 
-        // Highlight search matches
         val fullText = b.toAnnotatedString().text
         if (searchQuery.isNotEmpty()) {
             var startIndex = fullText.indexOf(searchQuery, ignoreCase = true)
@@ -539,3 +682,4 @@ fun renderStyledText(
         b.toAnnotatedString()
     }
 }
+

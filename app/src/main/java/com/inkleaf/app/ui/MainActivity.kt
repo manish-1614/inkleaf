@@ -63,10 +63,10 @@ class MainActivity : ComponentActivity() {
                         HomeScreen(
                             preferencesRepository = preferencesRepository,
                             onDocumentSelect = { uri ->
-                                openDocumentUri = uri
-                                val metadata = safRepository.getDocumentMetadata(uri)
-                                metadata?.let {
-                                    coroutineScope.launch {
+                                coroutineScope.launch {
+                                    openDocumentUri = uri
+                                    val metadata = safRepository.getDocumentMetadata(uri)
+                                    metadata?.let {
                                         preferencesRepository.addRecentDocument(it.uriString, it.displayName)
                                     }
                                 }

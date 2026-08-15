@@ -22,12 +22,17 @@ import com.inkleaf.app.domain.model.HeadingBlock
 fun TocDrawerContent(
     headings: List<HeadingBlock>,
     activeHeadingId: String?,
+    isDrawerOpen: Boolean,
     onHeadingClick: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val tocListState = rememberLazyListState()
 
-    LaunchedEffect(activeHeadingId) {
+    // Only animate the TOC list when the drawer is actually visible.
+    // Previously this ran animateScrollToItem() on every scroll tick even while
+    // the drawer was closed, contributing to background Choreographer frame work.
+    LaunchedEffect(activeHeadingId, isDrawerOpen) {
+        if (!isDrawerOpen) return@LaunchedEffect
         activeHeadingId?.let { id ->
             val index = headings.indexOfFirst { it.id == id }
             if (index >= 0) {

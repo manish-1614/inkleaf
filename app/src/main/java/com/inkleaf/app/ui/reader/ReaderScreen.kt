@@ -19,11 +19,18 @@ import androidx.compose.ui.unit.sp
 import com.inkleaf.app.data.preferences.ReaderPreferencesRepository
 import com.inkleaf.app.data.saf.DocumentMetadata
 import com.inkleaf.app.data.saf.SafDocumentRepository
-import com.inkleaf.app.domain.model.HeadingBlock
+import com.inkleaf.app.domain.model.*
 import com.inkleaf.app.domain.parser.MarkdownBlockParser
 import com.inkleaf.app.ui.theme.ReaderThemeMode
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+
+sealed class UiState<out T> {
+    object Loading : UiState<Nothing>()
+    data class Success<T>(val data: T) : UiState<T>()
+    data class Error(val message: String) : UiState<Nothing>()
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -36,74 +43,47 @@ fun ReaderScreen(
     modifier: Modifier = Modifier
 ) {
     val coroutineScope = rememberCoroutineScope()
-    var metadata by remember { mutableStateOf<DocumentMetadata?>(null) }
-    var rawContent by remember { mutableStateOf("") }
-    val blocks = remember(rawContent) { MarkdownBlockParser().parseToBlocks(rawContent) }
-    
+    // DocumentMetadata? because getDocumentMetadata returns null when the SAF URI cannot be resolved.
+    var uiState by remember { mutableStateOf<UiState<Pair<DocumentMetadata?, List<BlockModel>>>>(UiState.Loading) }
+
     val listState = rememberLazyListState()
     val snackbarHostState = remember { SnackbarHostState() }
-    
+
     var searchQuery by remember { mutableStateOf("") }
     var isSearchActive by remember { mutableStateOf(false) }
     var currentMatchIndex by remember { mutableStateOf(0) }
-    
-    // Find all blocks matching the search query
-    val matchingIndices = remember(blocks, searchQuery) {
-        if (searchQuery.isEmpty()) emptyList<Int>()
-        else {
-            blocks.mapIndexedNotNull { index, block ->
-                val match = when (block) {
-                    is com.inkleaf.app.domain.model.HeadingBlock -> block.text.contains(searchQuery, ignoreCase = true)
-                    is com.inkleaf.app.domain.model.ParagraphBlock -> block.text.contains(searchQuery, ignoreCase = true)
-                    is com.inkleaf.app.domain.model.CodeBlock -> block.code.contains(searchQuery, ignoreCase = true)
-                    is com.inkleaf.app.domain.model.CalloutBlock -> block.content.contains(searchQuery, ignoreCase = true)
-                    is com.inkleaf.app.domain.model.ListItemBlock -> block.text.contains(searchQuery, ignoreCase = true)
-                    else -> false
-                }
-                if (match) index else null
-            }
+
+    val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
+
+    suspend fun loadData() {
+        uiState = UiState.Loading
+        try {
+            val metadata = safRepository.getDocumentMetadata(documentUri)
+            val rawContent = safRepository.readDocumentContent(documentUri)
+            val blocks = MarkdownBlockParser().parseToBlocks(rawContent)
+            uiState = UiState.Success(metadata to blocks)
+        } catch (e: Exception) {
+            uiState = UiState.Error(e.localizedMessage ?: "Unknown error")
         }
     }
 
-    // Scroll progress calculation: current first visible index / total items count
-    val scrollProgress by remember {
-        derivedStateOf {
-            if (blocks.isEmpty()) 0f
-            else {
-                val visibleIndex = listState.firstVisibleItemIndex
-                val totalItems = blocks.size
-                visibleIndex.toFloat() / totalItems.toFloat()
-            }
-        }
-    }
-
-    // Calculate active heading ID based on first visible block in listState
-    val activeHeadingId by remember(blocks, listState) {
-        derivedStateOf {
-            val firstVisibleIndex = listState.firstVisibleItemIndex
-            var lastHeading: HeadingBlock? = null
-            for (i in 0..firstVisibleIndex) {
-                if (i < blocks.size) {
-                    val block = blocks[i]
-                    if (block is HeadingBlock) {
-                        lastHeading = block
-                    }
-                }
-            }
-            lastHeading?.id
-        }
-    }
-
-    // Load document content
     LaunchedEffect(documentUri) {
-        metadata = safRepository.getDocumentMetadata(documentUri)
-        rawContent = safRepository.readDocumentContent(documentUri)
+        loadData()
     }
 
-    // Restore scroll position on document load
-    LaunchedEffect(rawContent, metadata) {
+    val successState = (uiState as? UiState.Success<Pair<DocumentMetadata?, List<BlockModel>>>)
+    val blocks = successState?.data?.second ?: emptyList()
+    val metadata: DocumentMetadata? = successState?.data?.first
+
+    val headings = remember(blocks) { blocks.filterIsInstance<HeadingBlock>() }
+    val headingIndices = remember(blocks) { headingIndexById(blocks) }
+    val headingPositions = remember(blocks) {
+        blocks.mapIndexedNotNull { index, block -> if (block is HeadingBlock) index to block.id else null }
+    }
+
+    LaunchedEffect(successState, listState) {
         val finger = metadata?.fingerprint
-        if (finger != null && rawContent.isNotEmpty()) {
+        if (finger != null && blocks.isNotEmpty()) {
             val savedOffset = preferencesRepository.getScrollPosition(finger).first()
             if (savedOffset in 0 until blocks.size) {
                 listState.scrollToItem(savedOffset)
@@ -111,31 +91,25 @@ fun ReaderScreen(
         }
     }
 
-    // Auto-save scroll position when scrolled
     LaunchedEffect(listState.firstVisibleItemIndex) {
         val finger = metadata?.fingerprint
         if (finger != null) {
+            delay(400)
             preferencesRepository.saveScrollPosition(finger, listState.firstVisibleItemIndex, null)
         }
     }
 
-    val headings = remember(blocks) {
-        blocks.filterIsInstance<HeadingBlock>()
+    val activeHeadingId by remember(headingPositions) {
+        derivedStateOf {
+            val current = listState.firstVisibleItemIndex
+            headingPositions.lastOrNull { it.first <= current }?.second
+        }
     }
-    val headingIndices = remember(blocks) { headingIndexById(blocks) }
 
-    val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
-
-    fun reloadDocument() {
-        coroutineScope.launch {
-            try {
-                metadata = safRepository.getDocumentMetadata(documentUri)
-                rawContent = safRepository.readDocumentContent(documentUri)
-                listState.scrollToItem(0)
-                snackbarHostState.showSnackbar("Document reloaded")
-            } catch (e: Exception) {
-                snackbarHostState.showSnackbar("Failed to reload: ${e.localizedMessage}")
-            }
+    val matchingIndices = remember(blocks, searchQuery) {
+        if (searchQuery.isEmpty()) emptyList<Int>()
+        else blocks.mapIndexedNotNull { index, block ->
+            if (block.containsText(searchQuery)) index else null
         }
     }
 
@@ -146,6 +120,7 @@ fun ReaderScreen(
                 TocDrawerContent(
                     headings = headings,
                     activeHeadingId = activeHeadingId,
+                    isDrawerOpen = drawerState.isOpen,
                     onHeadingClick = { headingId ->
                         headingIndices[headingId]?.let { targetBlockIndex ->
                             coroutineScope.launch {
@@ -162,103 +137,114 @@ fun ReaderScreen(
             snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
             topBar = {
                 if (isSearchActive) {
-
                     InDocumentSearchBar(
                         query = searchQuery,
-                        onQueryChange = {
-                            searchQuery = it
-                            currentMatchIndex = 0
-                        },
+                        onQueryChange = { searchQuery = it; currentMatchIndex = 0 },
                         matchCount = matchingIndices.size,
                         currentMatchIndex = currentMatchIndex,
                         onNextMatch = {
                             if (matchingIndices.isNotEmpty()) {
                                 currentMatchIndex = (currentMatchIndex + 1) % matchingIndices.size
-                                coroutineScope.launch {
-                                    listState.animateScrollToItem(matchingIndices[currentMatchIndex])
-                                }
+                                coroutineScope.launch { listState.animateScrollToItem(matchingIndices[currentMatchIndex]) }
                             }
                         },
                         onPreviousMatch = {
                             if (matchingIndices.isNotEmpty()) {
                                 currentMatchIndex = (currentMatchIndex - 1 + matchingIndices.size) % matchingIndices.size
-                                coroutineScope.launch {
-                                    listState.animateScrollToItem(matchingIndices[currentMatchIndex])
-                                }
+                                coroutineScope.launch { listState.animateScrollToItem(matchingIndices[currentMatchIndex]) }
                             }
                         },
-                        onCloseSearch = {
-                            isSearchActive = false
-                            searchQuery = ""
-                        }
+                        onCloseSearch = { isSearchActive = false; searchQuery = "" }
                     )
                 } else {
                     TopAppBar(
-                        title = {
-                            Text(
-                                text = metadata?.displayName ?: "Reading document",
-                                fontSize = 18.sp,
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                        },
-                        navigationIcon = {
-                            IconButton(onClick = onBack) {
-                                Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = MaterialTheme.colorScheme.primary)
-                            }
-                        },
+                        title = { Text(metadata?.displayName ?: "Reading", fontSize = 18.sp) },
+                        navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, null) } },
                         actions = {
-                            IconButton(onClick = { reloadDocument() }) {
-                                Icon(Icons.Default.Refresh, contentDescription = "Refresh", tint = MaterialTheme.colorScheme.primary)
-                            }
-                            IconButton(onClick = { isSearchActive = true }) {
-                                Icon(Icons.Default.Search, contentDescription = "Search", tint = MaterialTheme.colorScheme.primary)
-                            }
-                            IconButton(onClick = { coroutineScope.launch { drawerState.open() } }) {
-                                Icon(Icons.Default.List, contentDescription = "Table of Contents", tint = MaterialTheme.colorScheme.primary)
-                            }
-                        },
-                        colors = TopAppBarDefaults.topAppBarColors(
-                            containerColor = MaterialTheme.colorScheme.background
-                        )
+                            IconButton(onClick = { coroutineScope.launch { loadData() } }) { Icon(Icons.Default.Refresh, null) }
+                            IconButton(onClick = { isSearchActive = true }) { Icon(Icons.Default.Search, null) }
+                            IconButton(onClick = { coroutineScope.launch { drawerState.open() } }) { Icon(Icons.Default.List, null) }
+                        }
                     )
                 }
             }
         ) { paddingValues ->
-            Box(
-                modifier = modifier
-                    .fillMaxSize()
-                    .padding(paddingValues)
-            ) {
-                LazyColumn(
-                    state = listState,
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(horizontal = 16.dp)
-                ) {
-                    itemsIndexed(
-                        items = blocks,
-                        key = { _, block -> block.id },
-                        contentType = { _, block -> block::class }
-                    ) { _, block ->
-                        BlockItemPresenter(
-                            block = block,
-                            searchQuery = searchQuery,
-                            themeMode = themeMode
+            Box(modifier = modifier.fillMaxSize().padding(paddingValues)) {
+                when (val state = uiState) {
+                    is UiState.Loading -> {
+                        // Full-document loading skeleton while SAF reads on Dispatchers.IO
+                        CircularProgressIndicator(Modifier.align(Alignment.Center))
+                    }
+                    is UiState.Error -> {
+                        // Failure isolation — never crash, always present a recoverable error state
+                        Column(
+                            modifier = Modifier
+                                .align(Alignment.Center)
+                                .padding(32.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            Text(
+                                text = "Could not open document",
+                                style = MaterialTheme.typography.titleMedium,
+                                color = MaterialTheme.colorScheme.error
+                            )
+                            Text(
+                                text = state.message,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            TextButton(onClick = { coroutineScope.launch { loadData() } }) {
+                                Text("Retry")
+                            }
+                        }
+                    }
+                    is UiState.Success -> {
+                        val scrollProgress by remember(blocks) {
+                            derivedStateOf {
+                                if (blocks.isEmpty()) 0f
+                                else listState.firstVisibleItemIndex.toFloat() / blocks.size.toFloat()
+                            }
+                        }
+
+                        LazyColumn(
+                            state = listState,
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(horizontal = 16.dp)
+                        ) {
+                            itemsIndexed(
+                                items = blocks,
+                                key = { _, b -> b.id },
+                                contentType = { _, b -> b::class }
+                            ) { _, block ->
+                                BlockItemPresenter(block, searchQuery, themeMode)
+                            }
+                        }
+
+                        // Thin reading progress indicator at top of the content viewport
+                        LinearProgressIndicator(
+                            progress = scrollProgress,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(3.dp)
+                                .align(Alignment.TopCenter),
+                            color = MaterialTheme.colorScheme.primary,
+                            trackColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)
                         )
                     }
                 }
-
-                // Thin reading progress indicator at top of page viewport
-                LinearProgressIndicator(
-                    progress = scrollProgress,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(3.dp)
-                        .align(Alignment.TopCenter),
-                    color = MaterialTheme.colorScheme.primary,
-                    trackColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)
-                )
             }
         }
     }
+}
+
+private fun BlockModel.containsText(query: String): Boolean = when (this) {
+    is HeadingBlock -> text.contains(query, true)
+    is ParagraphBlock -> text.contains(query, true)
+    is CodeBlock -> code.contains(query, true)
+    is ListItemBlock -> text.contains(query, true) || children.any { it.containsText(query) }
+    is CalloutBlock -> children.any { it.containsText(query) }
+    is TableBlock -> headers.any { it.text.contains(query, true) } || rows.any { r -> r.any { it.text.contains(query, true) } }
+    else -> false
 }

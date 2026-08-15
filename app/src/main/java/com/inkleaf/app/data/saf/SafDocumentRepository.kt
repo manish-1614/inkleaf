@@ -7,6 +7,8 @@ import android.provider.OpenableColumns
 import java.io.BufferedReader
 import java.io.InputStreamReader
 import java.security.MessageDigest
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 data class DocumentMetadata(
     val uriString: String,
@@ -17,7 +19,7 @@ data class DocumentMetadata(
 
 class SafDocumentRepository(private val context: Context) {
 
-    fun readDocumentContent(uri: Uri): String {
+    suspend fun readDocumentContent(uri: Uri): String = withContext(Dispatchers.IO) {
         val stringBuilder = StringBuilder()
         context.contentResolver.openInputStream(uri)?.use { inputStream ->
             BufferedReader(InputStreamReader(inputStream)).use { reader ->
@@ -28,13 +30,13 @@ class SafDocumentRepository(private val context: Context) {
                 }
             }
         }
-        return stringBuilder.toString()
+        stringBuilder.toString()
     }
 
-    fun getDocumentMetadata(uri: Uri): DocumentMetadata? {
+    suspend fun getDocumentMetadata(uri: Uri): DocumentMetadata? = withContext(Dispatchers.IO) {
         var displayName = "Unknown"
         var sizeBytes = 0L
-        
+
         context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
             if (cursor.moveToFirst()) {
                 val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
@@ -65,7 +67,7 @@ class SafDocumentRepository(private val context: Context) {
         }
         val fingerprint = computeFingerprint(content)
 
-        return DocumentMetadata(
+        DocumentMetadata(
             uriString = uri.toString(),
             displayName = displayName,
             sizeBytes = sizeBytes,

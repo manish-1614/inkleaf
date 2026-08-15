@@ -13,7 +13,13 @@ data class StyledTextRun(
     val isItalic: Boolean = false,
     val isStrikethrough: Boolean = false,
     val isCode: Boolean = false,
-    val linkUrl: String? = null
+    val isHighlighted: Boolean = false,
+    val isUnderline: Boolean = false,
+    val isSubscript: Boolean = false,
+    val isSuperscript: Boolean = false,
+    val isKbd: Boolean = false,
+    val linkUrl: String? = null,
+    val imageUrl: String? = null
 )
 
 data class ParagraphBlock(
@@ -38,20 +44,29 @@ data class CodeBlock(
     val code: String
 ) : BlockModel
 
+enum class TableCellAlignment {
+    LEFT, CENTER, RIGHT
+}
+
+data class TableCellModel(
+    val text: String,
+    val runs: List<StyledTextRun> = emptyList(),
+    val alignment: TableCellAlignment = TableCellAlignment.LEFT
+)
+
 data class TableBlock(
     override val id: String,
     override val sourceRange: SourceRange,
-    val headers: List<String>,
-    val rows: List<List<String>>
+    val headers: List<TableCellModel>,
+    val rows: List<List<TableCellModel>>
 ) : BlockModel
 
 data class CalloutBlock(
     override val id: String,
     override val sourceRange: SourceRange,
-    val type: String, // TIP, NOTE, WARNING, CAUTION
+    val type: String, // NOTE, TIP, WARNING, CAUTION, QUOTE
     val title: String?,
-    val content: String,
-    val runs: List<StyledTextRun> = emptyList()
+    val children: List<BlockModel>
 ) : BlockModel
 
 data class MermaidBlock(
@@ -71,6 +86,14 @@ data class SvgBlock(
     override val id: String,
     override val sourceRange: SourceRange,
     val svgContent: String
+) : BlockModel
+
+data class ImageBlock(
+    override val id: String,
+    override val sourceRange: SourceRange,
+    val url: String,
+    val altText: String?,
+    val title: String?
 ) : BlockModel
 
 data class RawFallbackBlock(
@@ -94,7 +117,8 @@ data class ListItemBlock(
     val number: Int?, // Item number if ordered list (1, 2, ...)
     val isTask: Boolean,
     val isChecked: Boolean,
-    val runs: List<StyledTextRun> = emptyList()
+    val runs: List<StyledTextRun> = emptyList(),
+    val children: List<BlockModel> = emptyList()
 ) : BlockModel
 
 
