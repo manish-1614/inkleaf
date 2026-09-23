@@ -11,7 +11,9 @@
             display: flex;
             justify-content: center;
             align-items: center;
-            overflow: hidden;
+            overflow-x: auto;
+            overflow-y: hidden;
+            -webkit-overflow-scrolling: touch;
         }
         #math-container {
             width: 100%;
@@ -25,6 +27,24 @@
     </style>
     <script src="katex.min.js"></script>
     <script>
+        function decodeBase64Utf8(base64) {
+            const binString = atob(base64);
+            const bytes = Uint8Array.from(binString, (m) => m.codePointAt(0));
+            return new TextDecoder().decode(bytes);
+        }
+
+        function renderMathBase64(base64Code, isInline) {
+            try {
+                const code = decodeBase64Utf8(base64Code);
+                renderMath(code, isInline);
+            } catch (err) {
+                document.getElementById('math-container').innerHTML = '<div class="error">Failed to decode Math:<br>' + (err.message || err) + '</div>';
+                if (window.AndroidBridge) {
+                    window.AndroidBridge.onRenderError(err.message || String(err));
+                }
+            }
+        }
+
         function renderMath(latexCode, isInline) {
             try {
                 const element = document.getElementById('math-container');

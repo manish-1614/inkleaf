@@ -57,6 +57,11 @@ class MainActivity : ComponentActivity() {
                             safRepository = safRepository,
                             preferencesRepository = preferencesRepository,
                             themeMode = themeMode,
+                            onThemeChange = { newTheme ->
+                                coroutineScope.launch {
+                                    preferencesRepository.setThemeMode(newTheme)
+                                }
+                            },
                             onBack = { openDocumentUri = null }
                         )
                     } else {

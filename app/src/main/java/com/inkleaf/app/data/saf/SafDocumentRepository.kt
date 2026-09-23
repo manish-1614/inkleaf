@@ -6,6 +6,7 @@ import android.net.Uri
 import android.provider.OpenableColumns
 import java.io.BufferedReader
 import java.io.InputStreamReader
+import java.security.DigestInputStream
 import java.security.MessageDigest
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -17,23 +18,14 @@ data class DocumentMetadata(
     val fingerprint: String
 )
 
+data class LoadedDocument(
+    val metadata: DocumentMetadata,
+    val content: String
+)
+
 class SafDocumentRepository(private val context: Context) {
 
-    suspend fun readDocumentContent(uri: Uri): String = withContext(Dispatchers.IO) {
-        val stringBuilder = StringBuilder()
-        context.contentResolver.openInputStream(uri)?.use { inputStream ->
-            BufferedReader(InputStreamReader(inputStream)).use { reader ->
-                var line: String? = reader.readLine()
-                while (line != null) {
-                    stringBuilder.append(line).append("\n")
-                    line = reader.readLine()
-                }
-            }
-        }
-        stringBuilder.toString()
-    }
-
-    suspend fun getDocumentMetadata(uri: Uri): DocumentMetadata? = withContext(Dispatchers.IO) {
+    suspend fun loadDocument(uri: Uri): LoadedDocument = withContext(Dispatchers.IO) {
         var displayName = "Unknown"
         var sizeBytes = 0L
 
@@ -55,29 +47,64 @@ class SafDocumentRepository(private val context: Context) {
             try {
                 val takeFlags = Intent.FLAG_GRANT_READ_URI_PERMISSION
                 context.contentResolver.takePersistableUriPermission(uri, takeFlags)
-            } catch (e: Exception) {
-                // Ignore if it cannot be persisted (e.g., non-persistent SAF sources)
+            } catch (_: Exception) {
+                // Ignore if it cannot be persisted
             }
         }
 
-        val content = try {
-            readDocumentContent(uri)
-        } catch (e: Exception) {
-            ""
+        val digest = MessageDigest.getInstance("SHA-256")
+        val stringBuilder = if (sizeBytes in 1..(20 * 1024 * 1024L)) {
+            StringBuilder(sizeBytes.toInt())
+        } else {
+            StringBuilder()
         }
-        val fingerprint = computeFingerprint(content)
 
-        DocumentMetadata(
+        context.contentResolver.openInputStream(uri)?.use { rawIn ->
+            DigestInputStream(rawIn, digest).use { dis ->
+                BufferedReader(InputStreamReader(dis, Charsets.UTF_8)).use { reader ->
+                    val buffer = CharArray(16384)
+                    var read = reader.read(buffer)
+                    while (read != -1) {
+                        stringBuilder.append(buffer, 0, read)
+                        read = reader.read(buffer)
+                    }
+                }
+            }
+        }
+
+        val hashBytes = digest.digest()
+        val fingerprint = hashBytes.joinToString("") { "%02x".format(it) }
+
+        val metadata = DocumentMetadata(
             uriString = uri.toString(),
             displayName = displayName,
             sizeBytes = sizeBytes,
             fingerprint = fingerprint
         )
+
+        LoadedDocument(metadata, stringBuilder.toString())
     }
 
-    private fun computeFingerprint(content: String): String {
-        val digest = MessageDigest.getInstance("SHA-256")
-        val hashBytes = digest.digest(content.toByteArray(Charsets.UTF_8))
-        return hashBytes.joinToString("") { "%02x".format(it) }
+    suspend fun readDocumentContent(uri: Uri): String = withContext(Dispatchers.IO) {
+        val stringBuilder = StringBuilder()
+        context.contentResolver.openInputStream(uri)?.use { inputStream ->
+            BufferedReader(InputStreamReader(inputStream, Charsets.UTF_8)).use { reader ->
+                val buffer = CharArray(16384)
+                var read = reader.read(buffer)
+                while (read != -1) {
+                    stringBuilder.append(buffer, 0, read)
+                    read = reader.read(buffer)
+                }
+            }
+        }
+        stringBuilder.toString()
+    }
+
+    suspend fun getDocumentMetadata(uri: Uri): DocumentMetadata? = withContext(Dispatchers.IO) {
+        try {
+            loadDocument(uri).metadata
+        } catch (_: Exception) {
+            null
+        }
     }
 }

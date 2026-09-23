@@ -2,6 +2,9 @@ package com.inkleaf.app.ui.reader
 
 import android.annotation.SuppressLint
 import android.graphics.Color as AndroidColor
+import android.os.Handler
+import android.os.Looper
+import android.util.Base64
 import android.webkit.JavascriptInterface
 import android.webkit.WebView
 import android.webkit.WebViewClient
@@ -42,6 +45,11 @@ fun MermaidWebViewPresenter(
 
     // Tracks the last key passed to evaluateJavascript so update() avoids redundant re-renders
     var lastRenderedKey by remember { mutableStateOf("") }
+
+    // Guards against state writes and WebView usage after the view has been released/destroyed.
+    // JS-bridge callbacks can arrive after onRelease; touching a destroyed WebView crashes natively.
+    var isReleased by remember { mutableStateOf(false) }
+    val mainHandler = remember { Handler(Looper.getMainLooper()) }
 
     // 5-second render timeout — resets whenever diagramCode or themeMode changes
     LaunchedEffect(diagramCode, themeMode) {
@@ -172,10 +180,10 @@ fun MermaidWebViewPresenter(
 
                         webViewClient = object : WebViewClient() {
                             override fun onPageFinished(view: WebView?, url: String?) {
-                                val escapedCode = diagramCode.replace("`", "\\`").replace("\\", "\\\\")
+                                val base64Code = Base64.encodeToString(diagramCode.toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
                                 val key = "$diagramCode|$themeMode"
                                 view?.evaluateJavascript(
-                                    "renderMermaid(`$escapedCode`, '$themeMode');",
+                                    "renderMermaidBase64('$base64Code', '$themeMode');",
                                     null
                                 )
                                 lastRenderedKey = key
@@ -185,16 +193,24 @@ fun MermaidWebViewPresenter(
                         addJavascriptInterface(object {
                             @JavascriptInterface
                             fun onRenderSuccess(width: Int, height: Int) {
-                                val density = resources.displayMetrics.density
-                                val computedHeightDp = (height / density).coerceAtLeast(100f).coerceAtMost(500f)
-                                webViewHeight = computedHeightDp.dp
-                                isLoading = false
+                                if (isReleased) return
+                                mainHandler.post {
+                                    if (isReleased) return@post
+                                    val density = resources.displayMetrics.density
+                                    val computedHeightDp = (height / density).coerceAtLeast(80f).coerceAtMost(2500f)
+                                    webViewHeight = computedHeightDp.dp
+                                    isLoading = false
+                                }
                             }
 
                             @JavascriptInterface
                             fun onRenderError(error: String) {
-                                renderError = error
-                                isLoading = false
+                                if (isReleased) return
+                                mainHandler.post {
+                                    if (isReleased) return@post
+                                    renderError = error
+                                    isLoading = false
+                                }
                             }
                         }, "AndroidBridge")
 
@@ -202,21 +218,27 @@ fun MermaidWebViewPresenter(
                     }
                 },
                 update = { webView ->
-                    // Re-render only when diagramCode or themeMode changed after page was first loaded
+                    if (isReleased) return@AndroidView
                     val key = "$diagramCode|$themeMode"
                     if (key != lastRenderedKey && lastRenderedKey.isNotEmpty()) {
                         lastRenderedKey = key
                         isLoading = true
-                        val escapedCode = diagramCode.replace("`", "\\`").replace("\\", "\\\\")
+                        val base64Code = Base64.encodeToString(diagramCode.toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
                         webView.evaluateJavascript(
-                            "renderMermaid(`$escapedCode`, '$themeMode');",
+                            "renderMermaidBase64('$base64Code', '$themeMode');",
                             null
                         )
                     }
                 },
                 onRelease = { webView ->
-                    webView.stopLoading()
-                    webView.destroy()
+                    // Detach the bridge and stop loading BEFORE destroy() so no late JS
+                    // callback touches a destroyed WebView (native crash guard).
+                    isReleased = true
+                    mainHandler.post {
+                        webView.stopLoading()
+                        webView.removeJavascriptInterface("AndroidBridge")
+                        webView.destroy()
+                    }
                 }
             )
 

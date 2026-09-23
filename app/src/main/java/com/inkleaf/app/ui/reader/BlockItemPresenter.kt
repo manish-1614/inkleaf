@@ -1,15 +1,18 @@
 package com.inkleaf.app.ui.reader
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.ClickableText
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -31,7 +34,11 @@ import com.inkleaf.app.domain.model.*
 import com.inkleaf.app.domain.parser.SyntaxHighlighter
 import com.inkleaf.app.domain.parser.normalizeCodeLanguage
 import com.inkleaf.app.ui.theme.ReaderThemeMode
+import com.inkleaf.app.ui.theme.ReaderThemePalette
+import com.inkleaf.app.ui.theme.resolvePalette
 import coil.compose.SubcomposeAsyncImage
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 enum class CodeBlockCopyAnchor {
     End
@@ -59,34 +66,68 @@ fun BlockItemPresenter(
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .padding(vertical = 6.dp)
+            .padding(vertical = 5.dp)
     ) {
         when (block) {
             is HeadingBlock -> {
-                val textStyle = when (block.level) {
-                    1 -> MaterialTheme.typography.headlineLarge
-                    2 -> MaterialTheme.typography.headlineMedium
-                    3 -> MaterialTheme.typography.headlineSmall
-                    else -> MaterialTheme.typography.titleMedium
-                }
-                val color = if (block.level <= 2) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondary
                 val uriHandler = LocalUriHandler.current
                 val annotatedText = renderStyledText(block.runs, block.text, searchQuery, themeMode)
                 
-                ClickableText(
-                    text = annotatedText,
-                    style = textStyle.copy(color = color),
-                    modifier = Modifier.padding(top = 14.dp, bottom = 6.dp),
-                    onClick = { offset ->
-                        annotatedText.getStringAnnotations(tag = "URL", start = offset, end = offset)
-                            .firstOrNull()?.let { annotation ->
-                                try {
-                                    uriHandler.openUri(annotation.item)
-                                } catch (e: Exception) {
-                                }
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(
+                            top = when (block.level) {
+                                1 -> 24.dp
+                                2 -> 18.dp
+                                3 -> 14.dp
+                                else -> 10.dp
+                            },
+                            bottom = when (block.level) {
+                                1 -> 8.dp
+                                2 -> 6.dp
+                                else -> 4.dp
                             }
+                        )
+                ) {
+                    val textStyle = when (block.level) {
+                        1 -> MaterialTheme.typography.headlineLarge
+                        2 -> MaterialTheme.typography.headlineMedium
+                        3 -> MaterialTheme.typography.headlineSmall
+                        else -> MaterialTheme.typography.titleMedium
                     }
-                )
+                    val headingColor = when (block.level) {
+                        1, 2 -> MaterialTheme.colorScheme.primary
+                        3 -> MaterialTheme.colorScheme.secondary
+                        else -> MaterialTheme.colorScheme.onSurface
+                    }
+
+                    ClickableText(
+                        text = annotatedText,
+                        style = textStyle.copy(color = headingColor),
+                        onClick = { offset ->
+                            annotatedText.getStringAnnotations(tag = "URL", start = offset, end = offset)
+                                .firstOrNull()?.let { annotation ->
+                                    try {
+                                        uriHandler.openUri(annotation.item)
+                                    } catch (_: Exception) {
+                                    }
+                                }
+                        }
+                    )
+
+                    // Subtle editorial accent line under H1
+                    if (block.level == 1) {
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Box(
+                            modifier = Modifier
+                                .width(40.dp)
+                                .height(2.dp)
+                                .clip(RoundedCornerShape(1.dp))
+                                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.6f))
+                        )
+                    }
+                }
             }
             is ParagraphBlock -> {
                 val uriHandler = LocalUriHandler.current
@@ -95,12 +136,13 @@ fun BlockItemPresenter(
                 ClickableText(
                     text = annotatedText,
                     style = MaterialTheme.typography.bodyLarge.copy(color = MaterialTheme.colorScheme.onSurface),
+                    modifier = Modifier.padding(vertical = 2.dp),
                     onClick = { offset ->
                         annotatedText.getStringAnnotations(tag = "URL", start = offset, end = offset)
                             .firstOrNull()?.let { annotation ->
                                 try {
                                     uriHandler.openUri(annotation.item)
-                                } catch (e: Exception) {
+                                } catch (_: Exception) {
                                 }
                             }
                     }
@@ -108,6 +150,9 @@ fun BlockItemPresenter(
             }
             is CodeBlock -> {
                 val clipboardManager = LocalClipboardManager.current
+                val coroutineScope = rememberCoroutineScope()
+                var isCopied by remember { mutableStateOf(false) }
+
                 val scrollState = rememberScrollState()
                 val lines = block.code.split("\n")
                 val showLineNumbers = lines.size > 1
@@ -121,40 +166,67 @@ fun BlockItemPresenter(
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clip(RoundedCornerShape(8.dp))
+                        .padding(vertical = 6.dp)
+                        .clip(RoundedCornerShape(10.dp))
                         .background(codeCardBg)
-                        .border(1.dp, Color(0xFF334155), RoundedCornerShape(8.dp))
+                        .border(1.dp, Color(0xFF334155), RoundedCornerShape(10.dp))
                 ) {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
                             .background(headerBg)
                             .heightIn(min = 40.dp)
-                            .padding(horizontal = 12.dp, vertical = 6.dp),
+                            .padding(horizontal = 14.dp, vertical = 6.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         if (headerLayout.showLanguageBadge && languageLabel != null) {
                             Surface(
-                                shape = RoundedCornerShape(4.dp),
-                                color = Color(0xFF2563EB),
+                                shape = RoundedCornerShape(6.dp),
+                                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.85f),
                                 modifier = Modifier.padding(vertical = 2.dp)
                             ) {
-                                  Text(
+                                Text(
                                     text = languageLabel.uppercase(),
+                                    fontFamily = FontFamily.Monospace,
                                     fontSize = 11.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = Color.White,
-                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
                                 )
                             }
+                        } else {
+                            Text(
+                                text = "CODE",
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFF94A3B8)
+                            )
                         }
+
                         Spacer(modifier = Modifier.weight(1f))
+
                         OutlinedButton(
-                            onClick = { clipboardManager.setText(AnnotatedString(block.code)) },
-                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
-                            modifier = Modifier.height(28.dp)
+                            onClick = {
+                                clipboardManager.setText(AnnotatedString(block.code))
+                                isCopied = true
+                                coroutineScope.launch {
+                                    delay(2000)
+                                    isCopied = false
+                                }
+                            },
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 2.dp),
+                            modifier = Modifier.height(28.dp),
+                            shape = RoundedCornerShape(6.dp),
+                            colors = ButtonDefaults.outlinedButtonColors(
+                                contentColor = if (isCopied) Color(0xFF34D399) else Color(0xFF93C5FD)
+                            )
                         ) {
-                            Text("Copy", fontSize = 11.sp, color = Color(0xFF93C5FD))
+                            Text(
+                                text = if (isCopied) "✓ Copied" else "Copy",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
                         }
                     }
                     HorizontalDivider(color = Color(0xFF334155))
@@ -164,11 +236,11 @@ fun BlockItemPresenter(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .horizontalScroll(scrollState)
-                                .padding(horizontal = 12.dp, vertical = 10.dp)
+                                .padding(horizontal = 14.dp, vertical = 12.dp)
                         ) {
                             if (showLineNumbers) {
                                 Column(
-                                    modifier = Modifier.padding(end = 12.dp),
+                                    modifier = Modifier.padding(end = 14.dp),
                                     horizontalAlignment = Alignment.End
                                 ) {
                                     lines.indices.forEach { index ->
@@ -198,11 +270,13 @@ fun BlockItemPresenter(
                 }
                 val columnCount = columnWidths.size
                 val tableWidth = columnWidths.sum().dp
+
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clip(RoundedCornerShape(8.dp))
-                        .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(8.dp))
+                        .padding(vertical = 8.dp)
+                        .clip(RoundedCornerShape(10.dp))
+                        .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(10.dp))
                         .horizontalScroll(rememberScrollState())
                 ) {
                     Column(modifier = Modifier.width(tableWidth)) {
@@ -212,14 +286,14 @@ fun BlockItemPresenter(
                                 columnWidths = columnWidths,
                                 searchQuery = searchQuery,
                                 isHeader = true,
-                                backgroundColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.8f),
+                                backgroundColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.85f),
                                 themeMode = themeMode
                             )
                             HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                         }
                         block.rows.forEachIndexed { rowIndex, rowData ->
                             val rowBg = if (rowIndex % 2 == 1) {
-                                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f)
+                                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.25f)
                             } else {
                                 Color.Transparent
                             }
@@ -232,28 +306,30 @@ fun BlockItemPresenter(
                                 themeMode = themeMode
                             )
                             if (rowIndex < block.rows.lastIndex) {
-                                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
+                                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
                             }
                         }
                     }
                 }
             }
             is CalloutBlock -> {
-                val accentColor = when (block.type) {
-                    "NOTE" -> Color(0xFF2563EB)
-                    "TIP" -> Color(0xFF059669)
-                    "WARNING" -> Color(0xFFD97706)
-                    "CAUTION" -> Color(0xFFDC2626)
-                    else -> MaterialTheme.colorScheme.primary
+                val (accentColor, iconSymbol, defaultTitle) = when (block.type) {
+                    "NOTE" -> Triple(Color(0xFF2563EB), "ℹ️", "Note")
+                    "TIP" -> Triple(Color(0xFF059669), "💡", "Tip")
+                    "WARNING" -> Triple(Color(0xFFD97706), "⚠️", "Warning")
+                    "CAUTION" -> Triple(Color(0xFFDC2626), "🛑", "Caution")
+                    "IMPORTANT" -> Triple(Color(0xFF7C3AED), "📌", "Important")
+                    else -> Triple(MaterialTheme.colorScheme.primary, "📌", block.type)
                 }
                 val cardBg = accentColor.copy(alpha = 0.08f)
 
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clip(RoundedCornerShape(8.dp))
+                        .padding(vertical = 6.dp)
+                        .clip(RoundedCornerShape(10.dp))
                         .background(cardBg)
-                        .border(1.dp, accentColor.copy(alpha = 0.2f), RoundedCornerShape(8.dp))
+                        .border(1.dp, accentColor.copy(alpha = 0.25f), RoundedCornerShape(10.dp))
                         .height(IntrinsicSize.Min)
                 ) {
                     Box(
@@ -265,16 +341,23 @@ fun BlockItemPresenter(
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 14.dp, vertical = 10.dp)
+                            .padding(horizontal = 14.dp, vertical = 12.dp)
                     ) {
-                        if (block.title != null) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.padding(bottom = 6.dp)
+                        ) {
                             Text(
-                                text = block.title,
+                                text = iconSymbol,
+                                fontSize = 14.sp
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = block.title ?: defaultTitle,
                                 fontWeight = FontWeight.Bold,
                                 color = accentColor,
                                 fontSize = 14.sp
                             )
-                            Spacer(modifier = Modifier.height(4.dp))
                         }
                         
                         block.children.forEach { child ->
@@ -288,15 +371,40 @@ fun BlockItemPresenter(
                 }
             }
             is HorizontalRuleBlock -> {
-                HorizontalDivider(
-                    modifier = Modifier.padding(vertical = 16.dp),
-                    color = MaterialTheme.colorScheme.outlineVariant
-                )
+                // Tasteful literary section ornament
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 24.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    HorizontalDivider(
+                        modifier = Modifier.weight(1f),
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)
+                    )
+                    Text(
+                        text = "  •   •   •  ",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
+                        letterSpacing = 2.sp
+                    )
+                    HorizontalDivider(
+                        modifier = Modifier.weight(1f),
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)
+                    )
+                }
             }
             is MermaidBlock -> {
+                val isDark = androidx.compose.foundation.isSystemInDarkTheme()
+                val resolvedThemeMode = when (themeMode.resolvePalette(isDark)) {
+                    com.inkleaf.app.ui.theme.ReaderThemePalette.DARK -> "dark"
+                    com.inkleaf.app.ui.theme.ReaderThemePalette.PAPER -> "paper"
+                    com.inkleaf.app.ui.theme.ReaderThemePalette.LIGHT -> "light"
+                }
                 MermaidWebViewPresenter(
                     diagramCode = block.diagramSource,
-                    themeMode = themeMode.name.lowercase()
+                    themeMode = resolvedThemeMode
                 )
             }
             is MathBlock -> {
@@ -306,13 +414,20 @@ fun BlockItemPresenter(
                 )
             }
             is SvgBlock -> {
-                Box(
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(100.dp),
-                    contentAlignment = Alignment.Center
+                        .height(100.dp)
                 ) {
-                    Text("SVG Graphic content")
+                    Box(contentAlignment = Alignment.Center) {
+                        Text(
+                            text = "SVG Graphic Content",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
             }
             is ImageBlock -> {
@@ -357,7 +472,7 @@ fun ImageItemPresenter(
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .padding(vertical = 8.dp),
+            .padding(vertical = 10.dp),
         contentAlignment = Alignment.Center
     ) {
         SubcomposeAsyncImage(
@@ -368,8 +483,8 @@ fun ImageItemPresenter(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(180.dp)
-                        .background(placeholderBg, RoundedCornerShape(8.dp))
-                        .border(1.dp, placeholderBorder, RoundedCornerShape(8.dp)),
+                        .background(placeholderBg, RoundedCornerShape(10.dp))
+                        .border(1.dp, placeholderBorder, RoundedCornerShape(10.dp)),
                     contentAlignment = Alignment.Center
                 ) {
                     CircularProgressIndicator(strokeWidth = 2.dp, modifier = Modifier.size(24.dp))
@@ -379,8 +494,8 @@ fun ImageItemPresenter(
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .background(placeholderBg, RoundedCornerShape(8.dp))
-                        .border(1.dp, placeholderBorder, RoundedCornerShape(8.dp))
+                        .background(placeholderBg, RoundedCornerShape(10.dp))
+                        .border(1.dp, placeholderBorder, RoundedCornerShape(10.dp))
                         .padding(16.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
@@ -395,19 +510,19 @@ fun ImageItemPresenter(
                         text = altText ?: url,
                         fontSize = 12.sp,
                         fontStyle = FontStyle.Italic,
-                        color = textColor.copy(alpha = 0.8f)
+                        color = textColor.copy(alpha = 0.85f)
                     )
                     if (title != null) {
                         Spacer(modifier = Modifier.height(2.dp))
                         Text(
                             text = title,
                             fontSize = 11.sp,
-                            color = textColor.copy(alpha = 0.6f)
+                            color = textColor.copy(alpha = 0.65f)
                         )
                     }
                     Spacer(modifier = Modifier.height(8.dp))
                     Surface(
-                        shape = RoundedCornerShape(4.dp),
+                        shape = RoundedCornerShape(6.dp),
                         color = if (isDark) Color(0xFF334155) else Color(0xFFE2E8F0)
                     ) {
                         Text(
@@ -415,14 +530,14 @@ fun ImageItemPresenter(
                             fontSize = 10.sp,
                             fontWeight = FontWeight.Medium,
                             color = textColor,
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
                         )
                     }
                 }
             },
             modifier = Modifier
                 .fillMaxWidth()
-                .clip(RoundedCornerShape(8.dp))
+                .clip(RoundedCornerShape(10.dp))
         )
     }
 }
@@ -436,13 +551,13 @@ private fun ListItemRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(start = (block.level * 16).dp, top = 4.dp, bottom = 4.dp),
+            .padding(start = (block.level * 16).dp, top = 3.dp, bottom = 3.dp),
         verticalAlignment = Alignment.Top
     ) {
         Box(
             modifier = Modifier
                 .width(24.dp)
-                .padding(top = 2.dp),
+                .padding(top = 3.dp),
             contentAlignment = Alignment.TopStart
         ) {
             if (block.isTask) {
@@ -450,7 +565,7 @@ private fun ListItemRow(
                     ReaderThemeMode.DARK -> Color(0xFF93C5FD)
                     else -> MaterialTheme.colorScheme.primary
                 }
-                val boxBorderColor = if (block.isChecked) checkboxColor else MaterialTheme.colorScheme.onSurfaceVariant
+                val boxBorderColor = if (block.isChecked) checkboxColor else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
                 
                 Box(
                     modifier = Modifier
@@ -474,8 +589,8 @@ private fun ListItemRow(
                 Text(
                     text = "${block.number}.",
                     style = MaterialTheme.typography.bodyLarge,
-                    fontWeight = FontWeight.Medium,
-                    color = MaterialTheme.colorScheme.onSurface
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary
                 )
             } else {
                 val bulletMarker = when (block.level % 3) {
@@ -487,24 +602,32 @@ private fun ListItemRow(
                     text = bulletMarker,
                     style = MaterialTheme.typography.bodyLarge,
                     fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
         }
         
         val uriHandler = LocalUriHandler.current
         val annotatedText = renderStyledText(block.runs, block.text, searchQuery, themeMode)
+        val textStyle = if (block.isTask && block.isChecked) {
+            MaterialTheme.typography.bodyLarge.copy(
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                textDecoration = TextDecoration.LineThrough
+            )
+        } else {
+            MaterialTheme.typography.bodyLarge.copy(color = MaterialTheme.colorScheme.onSurface)
+        }
         
         Column(modifier = Modifier.weight(1f)) {
             ClickableText(
                 text = annotatedText,
-                style = MaterialTheme.typography.bodyLarge.copy(color = MaterialTheme.colorScheme.onSurface),
+                style = textStyle,
                 onClick = { offset ->
                     annotatedText.getStringAnnotations(tag = "URL", start = offset, end = offset)
                         .firstOrNull()?.let { annotation ->
                             try {
                                 uriHandler.openUri(annotation.item)
-                            } catch (e: Exception) {
+                            } catch (_: Exception) {
                             }
                         }
                 }
@@ -638,7 +761,11 @@ fun renderStyledText(
                 textDecoration = textDecor,
                 fontFamily = if (run.isCode || run.isKbd) FontFamily.Monospace else FontFamily.Default,
                 color = when {
-                    run.linkUrl != null -> Color(0xFF2563EB)
+                    run.linkUrl != null -> when (themeMode) {
+                        ReaderThemeMode.DARK -> Color(0xFF38BDF8)
+                        ReaderThemeMode.SEPIA -> Color(0xFF8D3E1B)
+                        else -> Color(0xFF0F5B78)
+                    }
                     run.isHighlighted -> highlightColor
                     run.isCode -> codeColor
                     else -> Color.Unspecified
@@ -682,4 +809,3 @@ fun renderStyledText(
         b.toAnnotatedString()
     }
 }
-

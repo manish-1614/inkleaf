@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=3.0, user-scalable=yes">
     <style>
         body {
             margin: 0;
@@ -9,13 +9,20 @@
             background-color: transparent;
             display: flex;
             justify-content: center;
-            align-items: center;
-            overflow: hidden;
+            align-items: flex-start;
+            overflow-x: auto;
+            overflow-y: hidden;
+            -webkit-overflow-scrolling: touch;
         }
         #diagram {
-            width: 100%;
+            display: inline-block;
+            min-width: 100%;
             height: auto;
-            max-width: 100%;
+            text-align: center;
+        }
+        #diagram svg {
+            max-width: none !important;
+            height: auto !important;
         }
         .error {
             color: #EF4444;
@@ -25,10 +32,33 @@
             border: 1px solid #FCA5A5;
             background-color: #FEF2F2;
             border-radius: 4px;
+            text-align: left;
         }
     </style>
     <script src="mermaid.min.js"></script>
     <script>
+        function decodeBase64Utf8(base64) {
+            const binString = atob(base64);
+            const bytes = Uint8Array.from(binString, (m) => m.codePointAt(0));
+            return new TextDecoder().decode(bytes);
+        }
+
+        async function renderMermaidBase64(base64Code, theme) {
+            try {
+                const code = decodeBase64Utf8(base64Code);
+                await renderMermaid(code, theme);
+            } catch (err) {
+                const errorMsg = err && err.message ? err.message : String(err);
+                const element = document.getElementById('diagram');
+                if (element) {
+                    element.innerHTML = '<div class="error">Failed to decode diagram source:<br>' + errorMsg + '</div>';
+                }
+                if (window.AndroidBridge) {
+                    window.AndroidBridge.onRenderError(errorMsg);
+                }
+            }
+        }
+
         async function renderMermaid(code, theme) {
             const element = document.getElementById('diagram');
             try {
@@ -37,19 +67,39 @@
                     throw new Error("Mermaid library failed to load");
                 }
 
+                const resolvedTheme = (theme === 'dark') ? 'dark' : ((theme === 'sepia' || theme === 'paper') ? 'forest' : 'default');
+
                 const config = {
                     startOnLoad: false,
-                    theme: theme === 'dark' ? 'dark' : (theme === 'sepia' ? 'forest' : 'default'),
+                    theme: resolvedTheme,
                     securityLevel: 'strict'
                 };
                 mermaidObj.initialize(config);
 
                 if (typeof mermaidObj.render === 'function') {
-                    const result = await mermaidObj.render('mermaid-svg-' + Math.floor(Math.random() * 10000), code);
+                    const result = await mermaidObj.render('mermaid-svg-' + Math.floor(Math.random() * 100000), code);
                     const svgCode = typeof result === 'string' ? result : (result.svg || '');
                     element.innerHTML = svgCode;
+
+                    const svgElement = element.querySelector('svg');
+                    let measuredWidth = element.scrollWidth;
+                    let measuredHeight = element.scrollHeight || 200;
+
+                    if (svgElement) {
+                        const rect = svgElement.getBoundingClientRect();
+                        if (rect.height > 10) {
+                            measuredHeight = Math.ceil(rect.height);
+                        }
+                        if (rect.width > 10) {
+                            measuredWidth = Math.ceil(rect.width);
+                        }
+                    }
+
                     if (window.AndroidBridge) {
-                        window.AndroidBridge.onRenderSuccess(element.scrollWidth, element.scrollHeight || 200);
+                        window.AndroidBridge.onRenderSuccess(measuredWidth, measuredHeight);
+                        if (typeof window.AndroidBridge.onSvgGenerated === 'function') {
+                            window.AndroidBridge.onSvgGenerated(svgCode, measuredWidth, measuredHeight);
+                        }
                     }
                 } else {
                     throw new Error("Mermaid render method unavailable");

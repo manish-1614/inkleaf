@@ -2,6 +2,9 @@ package com.inkleaf.app.ui.reader
 
 import android.annotation.SuppressLint
 import android.graphics.Color as AndroidColor
+import android.os.Handler
+import android.os.Looper
+import android.util.Base64
 import android.webkit.JavascriptInterface
 import android.webkit.WebView
 import android.webkit.WebViewClient
@@ -30,8 +33,14 @@ fun KatexWebViewPresenter(
     var renderError by remember { mutableStateOf<String?>(null) }
     var isLoading by remember { mutableStateOf(true) }
 
+    // Guards against state writes and WebView usage after the view has been released/destroyed.
+    var isReleased by remember { mutableStateOf(false) }
+    val mainHandler = remember { Handler(Looper.getMainLooper()) }
+
+    var lastRenderedKey by remember { mutableStateOf("") }
+
     // 5-second render timeout — resets if latexFormula changes
-    LaunchedEffect(latexFormula) {
+    LaunchedEffect(latexFormula, isInline) {
         isLoading = true
         renderError = null
         delay(5_000L)
@@ -71,27 +80,37 @@ fun KatexWebViewPresenter(
 
                         webViewClient = object : WebViewClient() {
                             override fun onPageFinished(view: WebView?, url: String?) {
-                                val escapedFormula = latexFormula.replace("`", "\\`").replace("\\", "\\\\")
+                                val base64Formula = Base64.encodeToString(latexFormula.toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
+                                val key = "$latexFormula|$isInline"
                                 view?.evaluateJavascript(
-                                    "renderMath(`$escapedFormula`, $isInline);",
+                                    "renderMathBase64('$base64Formula', $isInline);",
                                     null
                                 )
+                                lastRenderedKey = key
                             }
                         }
 
                         addJavascriptInterface(object {
                             @JavascriptInterface
                             fun onRenderSuccess(width: Int, height: Int) {
-                                val density = resources.displayMetrics.density
-                                val computedHeightDp = (height / density).coerceAtLeast(40f).coerceAtMost(250f)
-                                webViewHeight = computedHeightDp.dp
-                                isLoading = false
+                                if (isReleased) return
+                                mainHandler.post {
+                                    if (isReleased) return@post
+                                    val density = resources.displayMetrics.density
+                                    val computedHeightDp = (height / density).coerceAtLeast(36f).coerceAtMost(800f)
+                                    webViewHeight = computedHeightDp.dp
+                                    isLoading = false
+                                }
                             }
 
                             @JavascriptInterface
                             fun onRenderError(error: String) {
-                                renderError = error
-                                isLoading = false
+                                if (isReleased) return
+                                mainHandler.post {
+                                    if (isReleased) return@post
+                                    renderError = error
+                                    isLoading = false
+                                }
                             }
                         }, "AndroidBridge")
 
@@ -99,11 +118,27 @@ fun KatexWebViewPresenter(
                     }
                 },
                 update = { webView ->
-                    // Handle update
+                    if (isReleased) return@AndroidView
+                    val key = "$latexFormula|$isInline"
+                    if (key != lastRenderedKey && lastRenderedKey.isNotEmpty()) {
+                        lastRenderedKey = key
+                        isLoading = true
+                        val base64Formula = Base64.encodeToString(latexFormula.toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
+                        webView.evaluateJavascript(
+                            "renderMathBase64('$base64Formula', $isInline);",
+                            null
+                        )
+                    }
                 },
                 onRelease = { webView ->
-                    webView.stopLoading()
-                    webView.destroy()
+                    // Detach the bridge and stop loading BEFORE destroy() so no late JS
+                    // callback touches a destroyed WebView (native crash guard).
+                    isReleased = true
+                    mainHandler.post {
+                        webView.stopLoading()
+                        webView.removeJavascriptInterface("AndroidBridge")
+                        webView.destroy()
+                    }
                 }
             )
 

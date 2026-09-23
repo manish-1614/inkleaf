@@ -11,11 +11,40 @@ import org.commonmark.ext.gfm.tables.TablesExtension
 import org.commonmark.ext.gfm.strikethrough.StrikethroughExtension
 import org.commonmark.ext.gfm.strikethrough.Strikethrough
 
+data class ParsedDocument(
+    val blocks: List<BlockModel> = emptyList(),
+    val headings: List<HeadingBlock> = emptyList(),
+    val headingIndices: Map<String, Int> = emptyMap(),
+    val headingPositions: List<Pair<Int, String>> = emptyList()
+)
+
 class MarkdownBlockParser {
 
     private val parser: Parser = Parser.builder()
         .extensions(listOf(TablesExtension.create(), StrikethroughExtension.create()))
         .build()
+
+    fun parseDocument(markdownSource: String): ParsedDocument {
+        val blocks = parseToBlocks(markdownSource)
+        val headings = mutableListOf<HeadingBlock>()
+        val headingIndices = mutableMapOf<String, Int>()
+        val headingPositions = mutableListOf<Pair<Int, String>>()
+
+        blocks.forEachIndexed { index, block ->
+            if (block is HeadingBlock) {
+                headings.add(block)
+                headingIndices[block.id] = index
+                headingPositions.add(index to block.id)
+            }
+        }
+
+        return ParsedDocument(
+            blocks = blocks,
+            headings = headings,
+            headingIndices = headingIndices,
+            headingPositions = headingPositions
+        )
+    }
 
     fun parseToBlocks(markdownSource: String): List<BlockModel> {
         val document = parser.parse(markdownSource)
