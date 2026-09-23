@@ -1,6 +1,9 @@
 package com.inkleaf.app.domain.parser
 
 import com.inkleaf.app.domain.model.ListItemBlock
+import com.inkleaf.app.domain.model.MermaidBlock
+import com.inkleaf.app.domain.model.MathBlock
+import com.inkleaf.app.domain.model.CodeBlock
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -205,11 +208,92 @@ class MarkdownBlockParserTest {
         assertEquals("Image title", images[0].title)
     }
 
+    private fun findSampleFile(relativePath: String): java.io.File {
+        val candidates = listOf(
+            java.io.File(relativePath),
+            java.io.File("..", relativePath),
+            java.io.File(System.getProperty("user.dir") ?: ".", relativePath),
+            java.io.File("C:\\Luminary\\Projects\\inkleaf", relativePath)
+        )
+        return candidates.firstOrNull { it.exists() }
+            ?: throw java.io.FileNotFoundException("Could not find sample file: $relativePath across candidates")
+    }
+
     @Test
     fun `parses full rendering test suite without crashing`() {
-        val file = java.io.File("C:\\Luminary\\Projects\\inkleaf\\docs\\sample\\Inkleaf_Markdown_Rendering_Test_Suite.md")
+        val file = findSampleFile("docs/sample/Inkleaf_Markdown_Rendering_Test_Suite.md")
         val content = file.readText()
         val blocks = parser.parseToBlocks(content)
         assertTrue(blocks.isNotEmpty())
+    }
+
+    @Test
+    fun `parses mermaid flowchart sequence and class diagrams into MermaidBlock`() {
+        val markdown = """
+            ```mermaid
+            flowchart TD
+                A[Start] --> B[Process]
+                B --> C{Decision}
+            ```
+
+            ```mermaid
+            sequenceDiagram
+                Alice->>Bob: Hello Bob, how are you?
+                Bob-->>Alice: I am good thanks!
+            ```
+
+            ```mermaid
+            classDiagram
+                Animal <|-- Duck
+                Animal : +int age
+                Animal : +String gender
+                Animal: +isMammal()
+            ```
+        """.trimIndent()
+
+        val blocks = parser.parseToBlocks(markdown)
+        val mermaidBlocks = blocks.filterIsInstance<MermaidBlock>()
+
+        assertEquals(3, mermaidBlocks.size)
+        assertTrue(mermaidBlocks[0].diagramSource.contains("flowchart TD"))
+        assertTrue(mermaidBlocks[0].diagramSource.contains("A[Start] --> B[Process]"))
+
+        assertTrue(mermaidBlocks[1].diagramSource.contains("sequenceDiagram"))
+        assertTrue(mermaidBlocks[1].diagramSource.contains("Alice->>Bob"))
+
+        assertTrue(mermaidBlocks[2].diagramSource.contains("classDiagram"))
+        assertTrue(mermaidBlocks[2].diagramSource.contains("Animal <|-- Duck"))
+    }
+
+    @Test
+    fun `parses math and latex fenced blocks into MathBlock`() {
+        val markdown = """
+            ```math
+            E = mc^2
+            ```
+
+            ```latex
+            \frac{d}{dx}\left( \int_{0}^{x} f(u)\,du\right)=f(x)
+            ```
+        """.trimIndent()
+
+        val blocks = parser.parseToBlocks(markdown)
+        val mathBlocks = blocks.filterIsInstance<MathBlock>()
+
+        assertEquals(2, mathBlocks.size)
+        assertEquals("E = mc^2", mathBlocks[0].latex.trim())
+        assertTrue(mathBlocks[1].latex.contains("\\frac{d}{dx}"))
+    }
+
+    @Test
+    fun `parses 90KB large file with 42 mermaid blocks safely and accurately`() {
+        val file = findSampleFile("docs/sample/Claude_Code_Configuration_CCA-F.md")
+        val content = file.readText()
+        val parsed = parser.parseDocument(content)
+
+        assertTrue(parsed.blocks.size > 500)
+        assertEquals(133, parsed.headings.size)
+        val mermaidBlocks = parsed.blocks.filterIsInstance<MermaidBlock>()
+        assertEquals(42, mermaidBlocks.size)
     }
 }

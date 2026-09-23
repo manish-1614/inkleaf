@@ -155,7 +155,7 @@ fun TocDrawerContent(
                             .fillMaxWidth()
                             .padding(start = indent)
                             .clip(RoundedCornerShape(8.dp))
-                            .clickable { onHeadingClick(heading.id) }
+                            .clickable(enabled = !isNavigating) { onHeadingClick(heading.id) }
                     ) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,

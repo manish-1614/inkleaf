@@ -22,6 +22,11 @@ class MainActivity : ComponentActivity() {
     private lateinit var preferencesRepository: ReaderPreferencesRepository
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        val defaultHandler = Thread.getDefaultUncaughtExceptionHandler()
+        Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
+            android.util.Log.e("InkleafCrash", "Uncaught exception on thread: ${thread.name}", throwable)
+            defaultHandler?.uncaughtException(thread, throwable)
+        }
         super.onCreate(savedInstanceState)
         
         safRepository = SafDocumentRepository(applicationContext)

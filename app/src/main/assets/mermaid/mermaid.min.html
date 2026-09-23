@@ -81,6 +81,9 @@
                     const svgCode = typeof result === 'string' ? result : (result.svg || '');
                     element.innerHTML = svgCode;
 
+                    // Ensure DOM reflow pass has occurred before measuring bounding rect
+                    await new Promise((resolve) => setTimeout(resolve, 30));
+
                     const svgElement = element.querySelector('svg');
                     let measuredWidth = element.scrollWidth;
                     let measuredHeight = element.scrollHeight || 200;
@@ -111,6 +114,18 @@
                     window.AndroidBridge.onRenderError(errorMsg);
                 }
             }
+        }
+
+        function notifyPageReady() {
+            if (window.AndroidBridge && typeof window.AndroidBridge.onPageReady === 'function') {
+                window.AndroidBridge.onPageReady();
+            }
+        }
+
+        if (document.readyState === 'complete' || document.readyState === 'interactive') {
+            notifyPageReady();
+        } else {
+            window.addEventListener('DOMContentLoaded', notifyPageReady);
         }
     </script>
 </head>

@@ -6,6 +6,7 @@ import android.os.Handler
 import android.os.Looper
 import android.util.Base64
 import android.webkit.JavascriptInterface
+import android.webkit.RenderProcessGoneDetail
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.compose.foundation.background
@@ -80,13 +81,24 @@ fun KatexWebViewPresenter(
 
                         webViewClient = object : WebViewClient() {
                             override fun onPageFinished(view: WebView?, url: String?) {
-                                val base64Formula = Base64.encodeToString(latexFormula.toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
-                                val key = "$latexFormula|$isInline"
-                                view?.evaluateJavascript(
-                                    "renderMathBase64('$base64Formula', $isInline);",
-                                    null
-                                )
-                                lastRenderedKey = key
+                                if (url?.startsWith("file:///android_asset/katex/katex.min.html") == true) {
+                                    val base64Formula = Base64.encodeToString(latexFormula.toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
+                                    view?.evaluateJavascript(
+                                        "renderMathBase64('$base64Formula', $isInline);",
+                                        null
+                                    )
+                                }
+                            }
+
+                            override fun onRenderProcessGone(view: WebView?, detail: RenderProcessGoneDetail?): Boolean {
+                                android.util.Log.e("InkleafCrash", "KaTeX WebView render process terminated: didCrash=${detail?.didCrash()}")
+                                if (isReleased) return true
+                                mainHandler.post {
+                                    if (isReleased) return@post
+                                    renderError = "Math WebView render process terminated"
+                                    isLoading = false
+                                }
+                                return true
                             }
                         }
 
@@ -96,6 +108,7 @@ fun KatexWebViewPresenter(
                                 if (isReleased) return
                                 mainHandler.post {
                                     if (isReleased) return@post
+                                    lastRenderedKey = "$latexFormula|$isInline"
                                     val density = resources.displayMetrics.density
                                     val computedHeightDp = (height / density).coerceAtLeast(36f).coerceAtMost(800f)
                                     webViewHeight = computedHeightDp.dp

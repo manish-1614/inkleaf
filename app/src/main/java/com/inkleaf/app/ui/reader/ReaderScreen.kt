@@ -156,18 +156,24 @@ fun ReaderScreen(
         }
     }
 
+    var scrollJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
+
     // Safe jump: clamps the target against live list bounds.
     // Long-distance jumps (>30 items) use instant scroll to avoid composing intermediate blocks.
     fun scrollToBlockIndex(targetIndex: Int, onDone: () -> Unit = {}) {
         val target = clampScrollTarget(targetIndex, blocks.size)
-        coroutineScope.launch {
+        scrollJob?.cancel()
+        scrollJob = coroutineScope.launch {
             try {
                 if (shouldUseInstantScroll(target, listState.firstVisibleItemIndex)) {
                     listState.scrollToItem(target, 0)
                 } else {
                     listState.animateScrollToItem(target)
                 }
-            } catch (_: Exception) {
+            } catch (_: kotlinx.coroutines.CancellationException) {
+                // Cancelled by a new target jump - ignore
+            } catch (e: Exception) {
+                android.util.Log.e("InkleafNav", "Scroll error", e)
             } finally {
                 onDone()
             }
