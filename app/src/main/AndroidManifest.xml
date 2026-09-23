@@ -9,7 +9,7 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:largeHeap="true"
         android:supportsRtl="true"
-        android:theme="@style/Theme.Inkleaf.Starting">
+        android:theme="@android:style/Theme.Material.Light.NoActionBar">
         
         <activity
             android:name=".ui.MainActivity"
