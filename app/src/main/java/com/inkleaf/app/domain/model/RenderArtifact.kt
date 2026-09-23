@@ -49,3 +49,13 @@ data class ErrorArtifact(
     override val intrinsicWidth: Int? = null
     override val intrinsicHeight: Int? = null
 }
+
+data class DiagramPlaceholderArtifact(
+    override val rendererId: String,
+    override val rendererVersion: String,
+    val diagramId: String,
+    val placeholderBlock: DiagramPlaceholderBlock
+) : RenderArtifact {
+    override val intrinsicWidth: Int? = null
+    override val intrinsicHeight: Int? = null
+}

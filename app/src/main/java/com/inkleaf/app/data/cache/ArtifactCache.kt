@@ -94,6 +94,7 @@ class ArtifactCache(private val context: Context) {
                 is VectorArtifact -> "VECTOR"
                 is HtmlArtifact -> "HTML"
                 is TextArtifact -> "TEXT"
+                is DiagramPlaceholderArtifact -> "PLACEHOLDER"
                 else -> "ERROR"
             }
 
@@ -111,6 +112,7 @@ class ArtifactCache(private val context: Context) {
                 is HtmlArtifact -> contentFile.writeText(artifact.htmlBody)
                 is TextArtifact -> contentFile.writeText(artifact.text)
                 is ErrorArtifact -> contentFile.writeText(artifact.errorMessage)
+                is DiagramPlaceholderArtifact -> contentFile.writeText(artifact.diagramId)
             }
         } catch (e: Exception) {
             // Ignore write errors to prevent crashes (Failure isolation per GEMINI.md)

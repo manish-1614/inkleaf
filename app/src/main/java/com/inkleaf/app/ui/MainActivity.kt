@@ -8,9 +8,15 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.navigation.NavType
+import androidx.navigation.compose.NavHost
+import androidx.navigation.compose.composable
+import androidx.navigation.compose.rememberNavController
+import androidx.navigation.navArgument
 import com.inkleaf.app.data.preferences.ReaderPreferencesRepository
 import com.inkleaf.app.data.saf.SafDocumentRepository
 import com.inkleaf.app.ui.home.HomeScreen
+import com.inkleaf.app.ui.reader.DiagramViewerScreen
 import com.inkleaf.app.ui.reader.ReaderScreen
 import com.inkleaf.app.ui.theme.InkleafTheme
 import com.inkleaf.app.ui.theme.ReaderThemeMode
@@ -57,18 +63,42 @@ class MainActivity : ComponentActivity() {
                 ) {
                     val currentUri = openDocumentUri
                     if (currentUri != null) {
-                        ReaderScreen(
-                            documentUri = currentUri,
-                            safRepository = safRepository,
-                            preferencesRepository = preferencesRepository,
-                            themeMode = themeMode,
-                            onThemeChange = { newTheme ->
-                                coroutineScope.launch {
-                                    preferencesRepository.setThemeMode(newTheme)
-                                }
-                            },
-                            onBack = { openDocumentUri = null }
-                        )
+                        val navController = rememberNavController()
+                        NavHost(
+                            navController = navController,
+                            startDestination = "reader"
+                        ) {
+                            composable("reader") {
+                                ReaderScreen(
+                                    documentUri = currentUri,
+                                    safRepository = safRepository,
+                                    preferencesRepository = preferencesRepository,
+                                    themeMode = themeMode,
+                                    onThemeChange = { newTheme ->
+                                        coroutineScope.launch {
+                                            preferencesRepository.setThemeMode(newTheme)
+                                        }
+                                    },
+                                    onBack = { openDocumentUri = null },
+                                    onDiagramClick = { diagramId ->
+                                        navController.navigate("diagram/$diagramId")
+                                    }
+                                )
+                            }
+                            composable(
+                                route = "diagram/{diagramId}",
+                                arguments = listOf(
+                                    navArgument("diagramId") { type = NavType.StringType }
+                                )
+                            ) { backStackEntry ->
+                                val diagramId = backStackEntry.arguments?.getString("diagramId") ?: ""
+                                DiagramViewerScreen(
+                                    diagramId = diagramId,
+                                    themeMode = themeMode,
+                                    onBack = { navController.popBackStack() }
+                                )
+                            }
+                        }
                     } else {
                         HomeScreen(
                             preferencesRepository = preferencesRepository,

@@ -75,6 +75,14 @@ data class MermaidBlock(
     val diagramSource: String
 ) : BlockModel
 
+data class DiagramPlaceholderBlock(
+    override val id: String,
+    override val sourceRange: SourceRange = SourceRange(0, 0),
+    val diagramId: String,
+    val language: String = "mermaid",
+    val previewLabel: String? = null
+) : BlockModel
+
 data class MathBlock(
     override val id: String,
     override val sourceRange: SourceRange,

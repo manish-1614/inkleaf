@@ -5,8 +5,10 @@ import android.graphics.Color as AndroidColor
 import android.os.Handler
 import android.os.Looper
 import android.util.Base64
+import android.webkit.ConsoleMessage
 import android.webkit.JavascriptInterface
 import android.webkit.RenderProcessGoneDetail
+import android.webkit.WebChromeClient
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.compose.animation.AnimatedVisibility
@@ -43,7 +45,8 @@ private object MermaidRenderLimiter {
 fun MermaidWebViewPresenter(
     diagramCode: String,
     themeMode: String, // "light", "dark", "sepia"
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    isFullScreen: Boolean = false
 ) {
     var webViewHeight by remember { mutableStateOf(180.dp) }
     var renderError by remember { mutableStateOf<String?>(null) }
@@ -52,6 +55,7 @@ fun MermaidWebViewPresenter(
 
     var webViewRef by remember { mutableStateOf<WebView?>(null) }
     var isPageLoaded by remember { mutableStateOf(false) }
+    var isRendering by remember { mutableStateOf(false) }
     var renderedKey by remember { mutableStateOf("") }
 
     // Guards against state writes and WebView usage after the view has been released/destroyed.
@@ -59,39 +63,45 @@ fun MermaidWebViewPresenter(
     val mainHandler = remember { Handler(Looper.getMainLooper()) }
 
     fun triggerRender(view: WebView?) {
-        if (view == null || !isPageLoaded || isReleased) return
+        if (view == null || !isPageLoaded || isReleased || isRendering) return
         val key = "$diagramCode|$themeMode"
         if (key == renderedKey && !isLoading) return
+        isRendering = true
         isLoading = true
         val base64Code = Base64.encodeToString(diagramCode.toByteArray(Charsets.UTF_8), Base64.NO_WRAP)
         view.evaluateJavascript("renderMermaidBase64('$base64Code', '$themeMode');", null)
     }
 
-    // Rate-limited render execution using the shared semaphore
+    // Render execution: rate-limited using shared semaphore if inline, or direct permit if full-screen
     LaunchedEffect(isPageLoaded, diagramCode, themeMode, webViewRef) {
         if (isPageLoaded && webViewRef != null && !isReleased) {
             val key = "$diagramCode|$themeMode"
             if (key != renderedKey) {
-                MermaidRenderLimiter.semaphore.withPermit {
+                if (isFullScreen) {
                     triggerRender(webViewRef)
+                } else {
+                    MermaidRenderLimiter.semaphore.withPermit {
+                        triggerRender(webViewRef)
+                    }
                 }
             }
         }
     }
 
-    // 8-second render timeout — resets whenever diagramCode or themeMode changes
+    // 14-second render timeout — resets whenever diagramCode or themeMode changes
     LaunchedEffect(diagramCode, themeMode) {
         isLoading = true
         renderError = null
-        delay(8_000L)
+        delay(14_000L)
         if (isLoading && renderedKey != "$diagramCode|$themeMode") {
             renderError = "Render timeout — diagram source shown below"
             isLoading = false
+            isRendering = false
         }
     }
 
     if (renderError != null) {
-        // Compact "Diagram unavailable" card with expandable source section
+        // Error card with expandable source section
         Card(
             modifier = modifier
                 .fillMaxWidth()
@@ -184,28 +194,50 @@ fun MermaidWebViewPresenter(
             }
         }
     } else {
-        // wrapContentHeight() ensures the Box never collapses to zero before height is resolved
-        Box(
-            modifier = modifier
+        val containerModifier = if (isFullScreen) {
+            modifier
+                .fillMaxSize()
+                .background(MaterialTheme.colorScheme.background)
+        } else {
+            modifier
                 .fillMaxWidth()
                 .wrapContentHeight()
-                .background(MaterialTheme.colorScheme.background),
-            contentAlignment = Alignment.TopCenter
+                .background(MaterialTheme.colorScheme.background)
+        }
+
+        val webViewModifier = if (isFullScreen) {
+            Modifier.fillMaxSize()
+        } else {
+            Modifier
+                .fillMaxWidth()
+                .height(webViewHeight)
+        }
+
+        Box(
+            modifier = containerModifier,
+            contentAlignment = if (isFullScreen) Alignment.Center else Alignment.TopCenter
         ) {
             AndroidView(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(webViewHeight),
+                modifier = webViewModifier,
                 factory = { context ->
                     WebView(context).apply {
                         webViewRef = this
                         setBackgroundColor(AndroidColor.TRANSPARENT)
                         settings.javaScriptEnabled = true
                         settings.blockNetworkLoads = true
-                        settings.allowFileAccess = false
-                        settings.allowContentAccess = false
-                        settings.domStorageEnabled = false
+                        settings.allowFileAccess = true
+                        settings.allowFileAccessFromFileURLs = true
+                        settings.allowUniversalAccessFromFileURLs = false
+                        settings.allowContentAccess = true
+                        settings.domStorageEnabled = true
                         settings.cacheMode = android.webkit.WebSettings.LOAD_NO_CACHE
+
+                        webChromeClient = object : WebChromeClient() {
+                            override fun onConsoleMessage(consoleMessage: ConsoleMessage?): Boolean {
+                                android.util.Log.d("MermaidJS", "${consoleMessage?.messageLevel()}: ${consoleMessage?.message()} (line ${consoleMessage?.lineNumber()})")
+                                return true
+                            }
+                        }
 
                         webViewClient = object : WebViewClient() {
                             override fun onPageFinished(view: WebView?, url: String?) {
@@ -224,6 +256,7 @@ fun MermaidWebViewPresenter(
                                     if (isReleased) return@post
                                     renderError = "WebView render process terminated (memory pressure)"
                                     isLoading = false
+                                    isRendering = false
                                 }
                                 return true
                             }
@@ -246,10 +279,13 @@ fun MermaidWebViewPresenter(
                                 mainHandler.post {
                                     if (isReleased) return@post
                                     renderedKey = "$diagramCode|$themeMode"
-                                    val density = resources.displayMetrics.density
-                                    val computedHeightDp = (height / density).coerceAtLeast(80f).coerceAtMost(2500f)
-                                    webViewHeight = computedHeightDp.dp
+                                    if (!isFullScreen) {
+                                        val density = resources.displayMetrics.density
+                                        val computedHeightDp = (height / density).coerceAtLeast(80f).coerceAtMost(2500f)
+                                        webViewHeight = computedHeightDp.dp
+                                    }
                                     isLoading = false
+                                    isRendering = false
                                     renderError = null
                                 }
                             }
@@ -261,6 +297,7 @@ fun MermaidWebViewPresenter(
                                     if (isReleased) return@post
                                     renderError = error
                                     isLoading = false
+                                    isRendering = false
                                 }
                             }
                         }, "AndroidBridge")
@@ -277,8 +314,6 @@ fun MermaidWebViewPresenter(
                     }
                 },
                 onRelease = { webView ->
-                    // Detach the bridge and stop loading BEFORE destroy() so no late JS
-                    // callback touches a destroyed WebView (native crash guard).
                     isReleased = true
                     webViewRef = null
                     mainHandler.post {
@@ -289,10 +324,10 @@ fun MermaidWebViewPresenter(
                 }
             )
 
-            // Skeleton progress bar — hidden once render succeeds or errors out
+            // Progress indicator — hidden once render succeeds or errors out
             if (isLoading) {
                 LinearProgressIndicator(
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth().align(Alignment.TopCenter)
                 )
             }
         }

@@ -1,6 +1,7 @@
 package com.inkleaf.app.domain.parser
 
 import com.inkleaf.app.domain.model.*
+import com.inkleaf.app.domain.plugin.MermaidRenderPlugin
 import org.commonmark.node.*
 import org.commonmark.parser.Parser
 import org.commonmark.ext.gfm.tables.TableBlock as GfmTableBlock
@@ -18,7 +19,10 @@ data class ParsedDocument(
     val headingPositions: List<Pair<Int, String>> = emptyList()
 )
 
-class MarkdownBlockParser {
+class MarkdownBlockParser(
+    private val mermaidPlugin: MermaidRenderPlugin = MermaidRenderPlugin(),
+    private val emitDiagramPlaceholders: Boolean = true
+) {
 
     private val parser: Parser = Parser.builder()
         .extensions(listOf(TablesExtension.create(), StrikethroughExtension.create()))
@@ -114,13 +118,25 @@ class MarkdownBlockParser {
                 val literal = node.literal ?: ""
                 when (info) {
                     "mermaid" -> {
-                        blocks.add(
-                            MermaidBlock(
-                                id = nextId(),
+                        val blockId = nextId()
+                        if (emitDiagramPlaceholders) {
+                            val position = blockId.removePrefix("block_").toIntOrNull() ?: 0
+                            val placeholder = mermaidPlugin.createPlaceholderBlock(
+                                diagramSource = literal,
                                 sourceRange = range,
-                                diagramSource = literal
+                                position = position,
+                                blockId = blockId
                             )
-                        )
+                            blocks.add(placeholder)
+                        } else {
+                            blocks.add(
+                                MermaidBlock(
+                                    id = blockId,
+                                    sourceRange = range,
+                                    diagramSource = literal
+                                )
+                            )
+                        }
                     }
                     "math", "latex" -> {
                         blocks.add(

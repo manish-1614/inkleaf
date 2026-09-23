@@ -1,41 +1,79 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=3.0, user-scalable=yes">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
     <style>
-        body {
+        html, body {
             margin: 0;
-            padding: 8px;
+            padding: 0;
+            width: 100%;
+            height: 100%;
             background-color: transparent;
+        }
+        body {
+            padding: 12px;
+            box-sizing: border-box;
             display: flex;
             justify-content: center;
-            align-items: flex-start;
-            overflow-x: auto;
-            overflow-y: hidden;
+            align-items: center;
+            overflow: auto;
             -webkit-overflow-scrolling: touch;
         }
         #diagram {
-            display: inline-block;
-            min-width: 100%;
-            height: auto;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            width: 100%;
+            height: 100%;
             text-align: center;
         }
         #diagram svg {
-            max-width: none !important;
+            max-width: 100% !important;
+            max-height: 100% !important;
             height: auto !important;
+            width: auto !important;
         }
         .error {
             color: #EF4444;
             font-family: monospace;
             font-size: 12px;
-            padding: 8px;
+            padding: 10px;
             border: 1px solid #FCA5A5;
             background-color: #FEF2F2;
-            border-radius: 4px;
+            border-radius: 6px;
             text-align: left;
+            max-width: 90%;
+            word-break: break-word;
         }
     </style>
-    <script src="mermaid.min.js"></script>
+    <script>
+        // 1. Critical Polyfill: structuredClone (missing in Android WebViews older than Chrome 98)
+        if (typeof window.structuredClone !== 'function') {
+            window.structuredClone = function(obj) {
+                if (obj === undefined) return undefined;
+                if (obj === null) return null;
+                if (typeof obj !== 'object') return obj;
+                try {
+                    return JSON.parse(JSON.stringify(obj));
+                } catch (e) {
+                    if (Array.isArray(obj)) return obj.slice();
+                    return Object.assign({}, obj);
+                }
+            };
+        }
+
+        // 2. Global error listener to immediately capture and report any initialization or syntax errors
+        window.addEventListener('error', function(event) {
+            var msg = event.message || (event.error && event.error.message) || String(event);
+            var file = event.filename || '';
+            var line = event.lineno || 0;
+            console.error("Mermaid Host Error: " + msg + " at " + file + ":" + line);
+            if (window.AndroidBridge && typeof window.AndroidBridge.onRenderError === 'function') {
+                window.AndroidBridge.onRenderError("Script error in " + file + " (line " + line + "): " + msg);
+            }
+        }, true);
+    </script>
+    <script src="mermaid.min.js" onerror="if(window.AndroidBridge && typeof window.AndroidBridge.onRenderError === 'function') window.AndroidBridge.onRenderError('Failed to load mermaid.min.js asset file. Check asset permissions.');"></script>
     <script>
         function decodeBase64Utf8(base64) {
             const binString = atob(base64);
@@ -43,7 +81,37 @@
             return new TextDecoder().decode(bytes);
         }
 
+        function getMermaidInstance() {
+            const raw = window.mermaid || (typeof mermaid !== 'undefined' ? mermaid : null);
+            if (!raw) return null;
+            return raw.default || raw;
+        }
+
+        function waitForMermaid(timeoutMs = 10000) {
+            return new Promise((resolve, reject) => {
+                const start = Date.now();
+                function check() {
+                    const m = getMermaidInstance();
+                    if (m && typeof m.render === 'function') {
+                        resolve(m);
+                    } else if (Date.now() - start > timeoutMs) {
+                        reject(new Error("Mermaid library failed to load within " + timeoutMs + "ms"));
+                    } else {
+                        setTimeout(check, 50);
+                    }
+                }
+                check();
+            });
+        }
+
+        let isRendering = false;
+
         async function renderMermaidBase64(base64Code, theme) {
+            if (isRendering) {
+                console.log("Render already in progress, queuing wait...");
+                await new Promise(r => setTimeout(r, 100));
+            }
+            isRendering = true;
             try {
                 const code = decodeBase64Utf8(base64Code);
                 await renderMermaid(code, theme);
@@ -53,19 +121,18 @@
                 if (element) {
                     element.innerHTML = '<div class="error">Failed to decode diagram source:<br>' + errorMsg + '</div>';
                 }
-                if (window.AndroidBridge) {
+                if (window.AndroidBridge && typeof window.AndroidBridge.onRenderError === 'function') {
                     window.AndroidBridge.onRenderError(errorMsg);
                 }
+            } finally {
+                isRendering = false;
             }
         }
 
         async function renderMermaid(code, theme) {
             const element = document.getElementById('diagram');
             try {
-                const mermaidObj = window.mermaid || (typeof mermaid !== 'undefined' ? mermaid : null);
-                if (!mermaidObj) {
-                    throw new Error("Mermaid library failed to load");
-                }
+                const mermaidObj = await waitForMermaid(10000);
 
                 const resolvedTheme = (theme === 'dark') ? 'dark' : ((theme === 'sepia' || theme === 'paper') ? 'forest' : 'default');
 
@@ -76,41 +143,40 @@
                 };
                 mermaidObj.initialize(config);
 
-                if (typeof mermaidObj.render === 'function') {
-                    const result = await mermaidObj.render('mermaid-svg-' + Math.floor(Math.random() * 100000), code);
-                    const svgCode = typeof result === 'string' ? result : (result.svg || '');
-                    element.innerHTML = svgCode;
+                const svgId = 'mermaid_svg_' + Date.now() + '_' + Math.floor(Math.random() * 10000);
+                const result = await mermaidObj.render(svgId, code);
+                const svgCode = typeof result === 'string' ? result : (result.svg || '');
+                element.innerHTML = svgCode;
 
-                    // Ensure DOM reflow pass has occurred before measuring bounding rect
-                    await new Promise((resolve) => setTimeout(resolve, 30));
+                // Ensure DOM reflow pass has occurred before measuring bounding rect
+                await new Promise((resolve) => setTimeout(resolve, 40));
 
-                    const svgElement = element.querySelector('svg');
-                    let measuredWidth = element.scrollWidth;
-                    let measuredHeight = element.scrollHeight || 200;
+                const svgElement = element.querySelector('svg');
+                let measuredWidth = element.scrollWidth;
+                let measuredHeight = element.scrollHeight || 200;
 
-                    if (svgElement) {
-                        const rect = svgElement.getBoundingClientRect();
-                        if (rect.height > 10) {
-                            measuredHeight = Math.ceil(rect.height);
-                        }
-                        if (rect.width > 10) {
-                            measuredWidth = Math.ceil(rect.width);
-                        }
+                if (svgElement) {
+                    const rect = svgElement.getBoundingClientRect();
+                    if (rect.height > 10) {
+                        measuredHeight = Math.ceil(rect.height);
                     }
+                    if (rect.width > 10) {
+                        measuredWidth = Math.ceil(rect.width);
+                    }
+                }
 
-                    if (window.AndroidBridge) {
+                if (window.AndroidBridge) {
+                    if (typeof window.AndroidBridge.onRenderSuccess === 'function') {
                         window.AndroidBridge.onRenderSuccess(measuredWidth, measuredHeight);
-                        if (typeof window.AndroidBridge.onSvgGenerated === 'function') {
-                            window.AndroidBridge.onSvgGenerated(svgCode, measuredWidth, measuredHeight);
-                        }
                     }
-                } else {
-                    throw new Error("Mermaid render method unavailable");
+                    if (typeof window.AndroidBridge.onSvgGenerated === 'function') {
+                        window.AndroidBridge.onSvgGenerated(svgCode, measuredWidth, measuredHeight);
+                    }
                 }
             } catch (err) {
                 const errorMsg = err && err.message ? err.message : String(err);
                 element.innerHTML = '<div class="error">Failed to parse Mermaid diagram:<br>' + errorMsg + '</div>';
-                if (window.AndroidBridge) {
+                if (window.AndroidBridge && typeof window.AndroidBridge.onRenderError === 'function') {
                     window.AndroidBridge.onRenderError(errorMsg);
                 }
             }
