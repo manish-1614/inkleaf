@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=3.0, user-scalable=yes">
+  <title>Mermaid Diagram</title>
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+    html, body {
+      width: 100%;
+      min-height: 100%;
+      margin: 0;
+      padding: 16px;
+      box-sizing: border-box;
+      background-color: transparent;
+      display: flex;
+      justify-content: center;
+      align-items: flex-start;
+      overflow: auto;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    }
+    body.theme-dark {
+      color: #F8FAFC;
+    }
+    body.theme-sepia {
+      color: #433422;
+    }
+    body.theme-light {
+      color: #0F172A;
+    }
+    #diagram-container {
+      width: 100%;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+    #diagram-container svg {
+      width: 100% !important;
+      max-width: 100% !important;
+      height: auto !important;
+      min-height: 100px;
+    }
+    .error-container {
+      font-family: monospace;
+      color: #7f1d1d;
+      background-color: #fee2e2;
+      padding: 12px;
+      border-radius: 8px;
+      white-space: pre-wrap;
+      font-size: 13px;
+      width: 100%;
+    }
+    body.theme-dark .error-container {
+      color: #FCA5A5;
+      background-color: #450A0A;
+      border: 1px solid #7F1D1D;
+    }
+    body.theme-sepia .error-container {
+      color: #78281F;
+      background-color: #FDF2E9;
+      border: 1px solid #FADBD8;
+    }
+  </style>
+  <script src="mermaid.min.js"></script>
+  <script>
+    if (typeof window.structuredClone !== 'function') {
+      window.structuredClone = function(obj) {
+        if (obj === undefined) return undefined;
+        if (obj === null) return null;
+        if (typeof obj !== 'object') return obj;
+        try {
+          return JSON.parse(JSON.stringify(obj));
+        } catch (e) {
+          if (Array.isArray(obj)) return obj.slice();
+          return Object.assign({}, obj);
+        }
+      };
+    }
+
+    function decodeBase64Utf8(base64Str) {
+      try {
+        const binString = window.atob(base64Str);
+        const bytes = Uint8Array.from(binString, (m) => m.codePointAt(0));
+        return new TextDecoder().decode(bytes);
+      } catch (e) {
+        return decodeURIComponent(escape(window.atob(base64Str)));
+      }
+    }
+
+    mermaid.initialize({
+      startOnLoad: false,
+      securityLevel: 'loose',
+      theme: 'default'
+    });
+
+    async function renderMermaidDiagram(rawCode, themeMode = 'light') {
+      const container = document.getElementById('diagram-container');
+      const uniqueId = 'mermaid_' + Math.random().toString(36).substring(2, 9);
+      try {
+        let mermaidTheme = 'default';
+        if (themeMode === 'dark') {
+          mermaidTheme = 'dark';
+          document.body.className = 'theme-dark';
+        } else if (themeMode === 'sepia') {
+          mermaidTheme = 'neutral';
+          document.body.className = 'theme-sepia';
+        } else {
+          document.body.className = 'theme-light';
+        }
+
+        mermaid.initialize({
+          startOnLoad: false,
+          securityLevel: 'loose',
+          theme: mermaidTheme
+        });
+
+        const result = await mermaid.render(uniqueId, rawCode);
+        const svgContent = typeof result === 'string' ? result : result.svg;
+        container.innerHTML = svgContent;
+        if (result.bindFunctions) {
+          result.bindFunctions(container);
+        }
+        if (window.AndroidBridge && typeof window.AndroidBridge.onRenderSuccess === 'function') {
+          window.AndroidBridge.onRenderSuccess();
+        }
+      } catch (err) {
+        container.innerHTML = '<div class="error-container">' + (err.message || err.str || err) + '</div>';
+        if (window.AndroidBridge && typeof window.AndroidBridge.onRenderError === 'function') {
+          window.AndroidBridge.onRenderError(err.message || err.str || String(err));
+        }
+      }
+    }
+
+    function renderFromBase64(base64Str, themeMode = 'light') {
+      try {
+        const decoded = decodeBase64Utf8(base64Str);
+        renderMermaidDiagram(decoded, themeMode);
+      } catch (e) {
+        document.getElementById('diagram-container').innerHTML = '<div class="error-container">Base64 Decode Error: ' + e.message + '</div>';
+      }
+    }
+
+    window.renderFromBase64 = renderFromBase64;
+    window.renderDiagramBase64 = renderFromBase64;
+    window.renderMermaidDiagram = renderMermaidDiagram;
+  </script>
+</head>
+<body class="theme-light">
+  <div id="diagram-container"></div>
+</body>
+</html>

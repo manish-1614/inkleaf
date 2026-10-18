@@ -14,7 +14,7 @@
 - Use the existing `BlockModel` and Compose rendering architecture; do not introduce a second Markdown renderer.
 - Preserve the existing Copy action for code blocks.
 - Keep tables horizontally scrollable when their shared columns cannot fit the viewport.
-- Show a code-block language label only for a recognized language; hide it for empty, plain-text, diagram, Mermaid-like, or unknown syntax.
+- Show a code-block language label only for a recognized language; hide it for empty, plain-text, diagram, or unknown syntax.
 
 ---
 
@@ -36,7 +36,6 @@
 
 **Files:**
 - Modify: `app/src/main/java/com/inkleaf/app/ui/reader/ReaderScreen.kt`
-- Modify: `app/src/main/java/com/inkleaf/app/ui/reader/MermaidWebViewPresenter.kt`
 - Modify: `app/src/main/java/com/inkleaf/app/ui/reader/KatexWebViewPresenter.kt`
 - Modify: `app/src/main/java/com/inkleaf/app/ui/reader/BlockItemPresenter.kt` if shared block presentation changes are needed.
 
@@ -68,7 +67,7 @@
 - Modify: `app/src/main/java/com/inkleaf/app/ui/reader/BlockItemPresenter.kt`.
 - Test: parser/domain or UI test location matching existing project conventions.
 
-- [x] Add failing tests for recognized labels such as `bash`, and hidden labels for empty, plain-text, Mermaid-like, diagram-like, and unknown info strings.
+- [x] Add failing tests for recognized labels such as `bash`, and hidden labels for empty, plain-text, diagram-like, and unknown info strings.
 - [x] Run the tests and confirm the current fallback label behavior fails them.
 - [x] Normalize fenced-code info strings and define a small recognized-language allowlist.
 - [x] Render the uppercase language badge only when the normalized language is recognized; otherwise omit the badge while retaining code and Copy.

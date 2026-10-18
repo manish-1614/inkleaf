@@ -15,6 +15,5 @@
 - JAVA_HOME: Eclipse Adoptium JDK 17; ANDROID_HOME set
 
 ## Active Decisions
-- Full architectural refactor approved (ViewModel layer) — user decision 2026-08-26
-- Mermaid/KaTeX: virtualize + reuse WebViews via pooling — user decision 2026-08-26
+- KaTeX: virtualize + reuse WebViews via pooling (Mermaid removed across project)
 - Remote images via Coil remain until a later round — user decision 2026-08-26

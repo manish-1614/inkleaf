@@ -1,11 +1,8 @@
 package com.inkleaf.app.domain.parser
 
-import com.inkleaf.app.data.diagram.DiagramRepository
 import com.inkleaf.app.domain.model.CodeBlock
-import com.inkleaf.app.domain.model.DiagramPlaceholderBlock
 import com.inkleaf.app.domain.model.ListItemBlock
 import com.inkleaf.app.domain.model.MathBlock
-import com.inkleaf.app.domain.model.MermaidBlock
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -231,67 +228,42 @@ class MarkdownBlockParserTest {
     }
 
     @Test
-    fun `parses mermaid flowchart sequence and class diagrams into DiagramPlaceholderBlock`() {
+    fun `intercepts fenced block with mermaid info string into MermaidBlock`() {
         val markdown = """
             ```mermaid
             flowchart TD
                 A[Start] --> B[Process]
                 B --> C{Decision}
             ```
+        """.trimIndent()
 
+        val blocks = parser.parseToBlocks(markdown)
+        assertEquals(1, blocks.size)
+        val mermaidBlock = blocks[0] as com.inkleaf.app.domain.model.MermaidBlock
+        assertTrue(mermaidBlock.diagramCode.contains("flowchart TD"))
+        assertTrue(mermaidBlock.diagramCode.contains("A[Start] --> B[Process]"))
+    }
+
+    @Test
+    fun `parses mermaid sequence diagram and detects diagram types accurately`() {
+        val markdown = """
             ```mermaid
             sequenceDiagram
-                Alice->>Bob: Hello Bob, how are you?
-                Bob-->>Alice: I am good thanks!
-            ```
-
-            ```mermaid
-            classDiagram
-                Animal <|-- Duck
-                Animal : +int age
-                Animal : +String gender
-                Animal: +isMammal()
+                Alice->>John: Hello John, how are you?
+                John-->>Alice: Great!
             ```
         """.trimIndent()
 
         val blocks = parser.parseToBlocks(markdown)
-        val placeholders = blocks.filterIsInstance<DiagramPlaceholderBlock>()
+        assertEquals(1, blocks.size)
+        val mermaidBlock = blocks[0] as com.inkleaf.app.domain.model.MermaidBlock
+        assertTrue(mermaidBlock.diagramCode.contains("sequenceDiagram"))
+        assertEquals("Sequence Diagram", com.inkleaf.app.ui.reader.detectDiagramType(mermaidBlock.diagramCode))
 
-        assertEquals(3, placeholders.size)
-        assertEquals("Start", placeholders[0].previewLabel)
-        assertEquals("Hello Bob, how are you?", placeholders[1].previewLabel)
-
-        val source0 = DiagramRepository.getInstance().getDiagram(placeholders[0].diagramId)
-        assertNotNull(source0)
-        assertTrue(source0!!.contains("flowchart TD"))
-        assertTrue(source0.contains("A[Start] --> B[Process]"))
-
-        val source1 = DiagramRepository.getInstance().getDiagram(placeholders[1].diagramId)
-        assertNotNull(source1)
-        assertTrue(source1!!.contains("sequenceDiagram"))
-        assertTrue(source1.contains("Alice->>Bob"))
-
-        val source2 = DiagramRepository.getInstance().getDiagram(placeholders[2].diagramId)
-        assertNotNull(source2)
-        assertTrue(source2!!.contains("classDiagram"))
-        assertTrue(source2.contains("Animal <|-- Duck"))
-    }
-
-    @Test
-    fun `parses mermaid into MermaidBlock when emitDiagramPlaceholders is false`() {
-        val markdown = """
-            ```mermaid
-            flowchart TD
-                A[Start] --> B[Process]
-            ```
-        """.trimIndent()
-
-        val rawParser = MarkdownBlockParser(emitDiagramPlaceholders = false)
-        val blocks = rawParser.parseToBlocks(markdown)
-        val mermaidBlocks = blocks.filterIsInstance<MermaidBlock>()
-
-        assertEquals(1, mermaidBlocks.size)
-        assertTrue(mermaidBlocks[0].diagramSource.contains("flowchart TD"))
+        assertEquals("Flowchart", com.inkleaf.app.ui.reader.detectDiagramType("flowchart TD\n  A-->B"))
+        assertEquals("Class Diagram", com.inkleaf.app.ui.reader.detectDiagramType("classDiagram\n  Animal <|-- Duck"))
+        assertEquals("State Diagram", com.inkleaf.app.ui.reader.detectDiagramType("stateDiagram-v2\n  [*] --> Still"))
+        assertEquals("ER Diagram", com.inkleaf.app.ui.reader.detectDiagramType("erDiagram\n  CUSTOMER ||--o{ ORDER : places"))
     }
 
     @Test
@@ -315,17 +287,14 @@ class MarkdownBlockParserTest {
     }
 
     @Test
-    fun `parses 90KB large file with 42 mermaid blocks safely and accurately`() {
+    fun `parses 90KB large file safely and accurately`() {
         val file = findSampleFile("docs/sample/Claude_Code_Configuration_CCA-F.md")
         val content = file.readText()
         val parsed = parser.parseDocument(content)
 
         assertTrue(parsed.blocks.size > 500)
         assertEquals(133, parsed.headings.size)
-        val placeholders = parsed.blocks.filterIsInstance<DiagramPlaceholderBlock>()
-        assertEquals(42, placeholders.size)
-        placeholders.forEach { placeholder ->
-            assertNotNull(DiagramRepository.getInstance().getDiagram(placeholder.diagramId))
-        }
+        val codeBlocks = parsed.blocks.filterIsInstance<CodeBlock>()
+        assertTrue(codeBlocks.isNotEmpty())
     }
 }

@@ -35,7 +35,6 @@ import androidx.compose.ui.unit.TextUnit
 import com.inkleaf.app.domain.model.*
 import com.inkleaf.app.domain.parser.SyntaxHighlighter
 import com.inkleaf.app.domain.parser.normalizeCodeLanguage
-import com.inkleaf.app.domain.plugin.MermaidRenderPlugin
 import com.inkleaf.app.ui.theme.ReaderThemeMode
 import com.inkleaf.app.ui.theme.ReaderThemePalette
 import com.inkleaf.app.ui.theme.resolvePalette
@@ -64,8 +63,7 @@ fun BlockItemPresenter(
     block: BlockModel,
     searchQuery: String,
     themeMode: ReaderThemeMode,
-    modifier: Modifier = Modifier,
-    onDiagramClick: (String) -> Unit = {}
+    modifier: Modifier = Modifier
 ) {
     Box(
         modifier = modifier
@@ -379,8 +377,7 @@ fun BlockItemPresenter(
                             BlockItemPresenter(
                                 block = child,
                                 searchQuery = searchQuery,
-                                themeMode = themeMode,
-                                onDiagramClick = onDiagramClick
+                                themeMode = themeMode
                             )
                         }
                     }
@@ -411,29 +408,16 @@ fun BlockItemPresenter(
                     )
                 }
             }
-            is DiagramPlaceholderBlock -> {
-                DiagramPlaceholderCard(
-                    block = block,
-                    themeMode = themeMode,
-                    onClick = { onDiagramClick(block.diagramId) }
-                )
-            }
-            is MermaidBlock -> {
-                val placeholder = MermaidRenderPlugin().createPlaceholderBlock(
-                    diagramSource = block.diagramSource,
-                    sourceRange = block.sourceRange,
-                    blockId = block.id
-                )
-                DiagramPlaceholderCard(
-                    block = placeholder,
-                    themeMode = themeMode,
-                    onClick = { onDiagramClick(placeholder.diagramId) }
-                )
-            }
             is MathBlock -> {
                 KatexWebViewPresenter(
                     latexFormula = block.latex,
                     isInline = block.isInline
+                )
+            }
+            is MermaidBlock -> {
+                MermaidBlockPresenter(
+                    block = block,
+                    themeMode = themeMode
                 )
             }
             is SvgBlock -> {
@@ -465,8 +449,7 @@ fun BlockItemPresenter(
                 ListItemRow(
                     block = block,
                     searchQuery = searchQuery,
-                    themeMode = themeMode,
-                    onDiagramClick = onDiagramClick
+                    themeMode = themeMode
                 )
             }
             is RawFallbackBlock -> {
@@ -570,8 +553,7 @@ fun ImageItemPresenter(
 private fun ListItemRow(
     block: ListItemBlock,
     searchQuery: String,
-    themeMode: ReaderThemeMode,
-    onDiagramClick: (String) -> Unit = {}
+    themeMode: ReaderThemeMode
 ) {
     Row(
         modifier = Modifier
@@ -663,8 +645,7 @@ private fun ListItemRow(
                     BlockItemPresenter(
                         block = child,
                         searchQuery = searchQuery,
-                        themeMode = themeMode,
-                        onDiagramClick = onDiagramClick
+                        themeMode = themeMode
                     )
                 }
             }
@@ -833,150 +814,6 @@ fun renderStyledText(
             }
         }
         b.toAnnotatedString()
-    }
-}
-
-private data class PlaceholderCardColors(
-    val cardBg: Color,
-    val borderColor: Color,
-    val iconBg: Color,
-    val accentColor: Color,
-    val textColor: Color,
-    val subTextColor: Color
-)
-
-@Composable
-fun DiagramPlaceholderCard(
-    block: DiagramPlaceholderBlock,
-    themeMode: ReaderThemeMode,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    val isDark = androidx.compose.foundation.isSystemInDarkTheme()
-    val palette = themeMode.resolvePalette(isDark)
-
-    val colors = when (palette) {
-        ReaderThemePalette.DARK -> PlaceholderCardColors(
-            cardBg = Color(0xFF0F172A),
-            borderColor = Color(0xFF334155),
-            iconBg = Color(0xFF38BDF8).copy(alpha = 0.15f),
-            accentColor = Color(0xFF38BDF8),
-            textColor = Color(0xFFF1F5F9),
-            subTextColor = Color(0xFF94A3B8)
-        )
-        ReaderThemePalette.PAPER -> PlaceholderCardColors(
-            cardBg = Color(0xFFF4ECD8),
-            borderColor = Color(0xFFDCD2BD),
-            iconBg = Color(0xFF8D3E1B).copy(alpha = 0.12f),
-            accentColor = Color(0xFF8D3E1B),
-            textColor = Color(0xFF3D271D),
-            subTextColor = Color(0xFF7D6556)
-        )
-        ReaderThemePalette.LIGHT -> PlaceholderCardColors(
-            cardBg = Color(0xFFF8FAFC),
-            borderColor = Color(0xFFE2E8F0),
-            iconBg = Color(0xFF0F5B78).copy(alpha = 0.12f),
-            accentColor = Color(0xFF0F5B78),
-            textColor = Color(0xFF0F172A),
-            subTextColor = Color(0xFF64748B)
-        )
-    }
-
-    val (cardBg, borderColor, iconBg, accentColor, textColor, subTextColor) = colors
-
-    Surface(
-        onClick = onClick,
-        shape = RoundedCornerShape(12.dp),
-        color = cardBg,
-        border = androidx.compose.foundation.BorderStroke(1.dp, borderColor),
-        modifier = modifier
-            .fillMaxWidth()
-            .padding(vertical = 6.dp)
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 14.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(42.dp)
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(iconBg),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    text = "📊",
-                    fontSize = 18.sp
-                )
-            }
-
-            Spacer(modifier = Modifier.width(12.dp))
-
-            Column(
-                modifier = Modifier.weight(1f)
-            ) {
-                Text(
-                    text = block.previewLabel ?: "Diagram",
-                    fontWeight = FontWeight.SemiBold,
-                    fontSize = 14.sp,
-                    color = textColor,
-                    maxLines = 1,
-                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
-                )
-                Spacer(modifier = Modifier.height(2.dp))
-                Row(
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Surface(
-                        shape = RoundedCornerShape(4.dp),
-                        color = accentColor.copy(alpha = 0.12f),
-                        modifier = Modifier.padding(end = 6.dp)
-                    ) {
-                        Text(
-                            text = block.language.uppercase(),
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = accentColor,
-                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                        )
-                    }
-                    Text(
-                        text = "Tap to view",
-                        fontSize = 12.sp,
-                        color = subTextColor
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.width(8.dp))
-
-            Surface(
-                shape = RoundedCornerShape(6.dp),
-                color = accentColor.copy(alpha = 0.08f),
-                border = androidx.compose.foundation.BorderStroke(1.dp, accentColor.copy(alpha = 0.2f))
-            ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    Text(
-                        text = "View",
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Medium,
-                        color = accentColor
-                    )
-                    Icon(
-                        imageVector = Icons.Default.ArrowForward,
-                        contentDescription = "View diagram",
-                        tint = accentColor,
-                        modifier = Modifier.size(13.dp)
-                    )
-                }
-            }
-        }
     }
 }
 

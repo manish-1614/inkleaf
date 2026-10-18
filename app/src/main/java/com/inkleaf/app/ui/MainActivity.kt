@@ -8,15 +8,10 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
-import androidx.navigation.NavType
-import androidx.navigation.compose.NavHost
-import androidx.navigation.compose.composable
-import androidx.navigation.compose.rememberNavController
-import androidx.navigation.navArgument
+import com.inkleaf.app.BuildConfig
 import com.inkleaf.app.data.preferences.ReaderPreferencesRepository
 import com.inkleaf.app.data.saf.SafDocumentRepository
 import com.inkleaf.app.ui.home.HomeScreen
-import com.inkleaf.app.ui.reader.DiagramViewerScreen
 import com.inkleaf.app.ui.reader.ReaderScreen
 import com.inkleaf.app.ui.theme.InkleafTheme
 import com.inkleaf.app.ui.theme.ReaderThemeMode
@@ -26,6 +21,16 @@ class MainActivity : ComponentActivity() {
 
     private lateinit var safRepository: SafDocumentRepository
     private lateinit var preferencesRepository: ReaderPreferencesRepository
+
+    private val openDocumentUriFlow = kotlinx.coroutines.flow.MutableStateFlow<Uri?>(null)
+
+    override fun onNewIntent(intent: android.content.Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        if (intent.action == android.content.Intent.ACTION_VIEW) {
+            openDocumentUriFlow.value = intent.data
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         val defaultHandler = Thread.getDefaultUncaughtExceptionHandler()
@@ -38,20 +43,24 @@ class MainActivity : ComponentActivity() {
         safRepository = SafDocumentRepository(applicationContext)
         preferencesRepository = ReaderPreferencesRepository(applicationContext)
 
+        if (com.inkleaf.app.BuildConfig.DEBUG) {
+            android.webkit.WebView.setWebContentsDebuggingEnabled(true)
+        }
+
+        if (intent?.action == android.content.Intent.ACTION_VIEW) {
+            openDocumentUriFlow.value = intent.data
+        }
+
         setContent {
             val coroutineScope = rememberCoroutineScope()
             val themeMode by preferencesRepository.themeFlow.collectAsState(initial = ReaderThemeMode.SEPIA)
-            var openDocumentUri by remember { mutableStateOf<Uri?>(null) }
+            val openDocumentUri by openDocumentUriFlow.collectAsState()
 
-            // Handle incoming intents (Android open-with)
-            LaunchedEffect(intent) {
-                if (intent?.action == android.content.Intent.ACTION_VIEW) {
-                    intent.data?.let { uri ->
-                        openDocumentUri = uri
-                        val metadata = safRepository.getDocumentMetadata(uri)
-                        metadata?.let {
-                            preferencesRepository.addRecentDocument(it.uriString, it.displayName)
-                        }
+            LaunchedEffect(openDocumentUri) {
+                openDocumentUri?.let { uri ->
+                    val metadata = safRepository.getDocumentMetadata(uri)
+                    metadata?.let {
+                        preferencesRepository.addRecentDocument(it.uriString, it.displayName)
                     }
                 }
             }
@@ -63,48 +72,24 @@ class MainActivity : ComponentActivity() {
                 ) {
                     val currentUri = openDocumentUri
                     if (currentUri != null) {
-                        val navController = rememberNavController()
-                        NavHost(
-                            navController = navController,
-                            startDestination = "reader"
-                        ) {
-                            composable("reader") {
-                                ReaderScreen(
-                                    documentUri = currentUri,
-                                    safRepository = safRepository,
-                                    preferencesRepository = preferencesRepository,
-                                    themeMode = themeMode,
-                                    onThemeChange = { newTheme ->
-                                        coroutineScope.launch {
-                                            preferencesRepository.setThemeMode(newTheme)
-                                        }
-                                    },
-                                    onBack = { openDocumentUri = null },
-                                    onDiagramClick = { diagramId ->
-                                        navController.navigate("diagram/$diagramId")
-                                    }
-                                )
-                            }
-                            composable(
-                                route = "diagram/{diagramId}",
-                                arguments = listOf(
-                                    navArgument("diagramId") { type = NavType.StringType }
-                                )
-                            ) { backStackEntry ->
-                                val diagramId = backStackEntry.arguments?.getString("diagramId") ?: ""
-                                DiagramViewerScreen(
-                                    diagramId = diagramId,
-                                    themeMode = themeMode,
-                                    onBack = { navController.popBackStack() }
-                                )
-                            }
-                        }
+                        ReaderScreen(
+                            documentUri = currentUri,
+                            safRepository = safRepository,
+                            preferencesRepository = preferencesRepository,
+                            themeMode = themeMode,
+                            onThemeChange = { newTheme ->
+                                coroutineScope.launch {
+                                    preferencesRepository.setThemeMode(newTheme)
+                                }
+                            },
+                            onBack = { openDocumentUriFlow.value = null }
+                        )
                     } else {
                         HomeScreen(
                             preferencesRepository = preferencesRepository,
                             onDocumentSelect = { uri ->
                                 coroutineScope.launch {
-                                    openDocumentUri = uri
+                                    openDocumentUriFlow.value = uri
                                     val metadata = safRepository.getDocumentMetadata(uri)
                                     metadata?.let {
                                         preferencesRepository.addRecentDocument(it.uriString, it.displayName)

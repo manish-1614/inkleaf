@@ -39,6 +39,7 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
     }
     packaging {
         resources {
@@ -59,9 +60,13 @@ dependencies {
     implementation("androidx.compose.material3:material3")
     implementation("androidx.navigation:navigation-compose:2.7.7")
     implementation("io.coil-kt:coil-compose:2.5.0")
+    implementation("io.coil-kt:coil-svg:2.5.0")
     
     // Jetpack DataStore (Preferences & Reader position)
     implementation("androidx.datastore:datastore-preferences:1.0.0")
+
+    // AndroidX WebKit (WebViewAssetLoader for secure offline asset serving)
+    implementation("androidx.webkit:webkit:1.10.0")
 
     // Markdown Parsing Engine (Markwon & CommonMark)
     implementation("io.noties.markwon:core:4.6.2")

@@ -69,20 +69,6 @@ data class CalloutBlock(
     val children: List<BlockModel>
 ) : BlockModel
 
-data class MermaidBlock(
-    override val id: String,
-    override val sourceRange: SourceRange,
-    val diagramSource: String
-) : BlockModel
-
-data class DiagramPlaceholderBlock(
-    override val id: String,
-    override val sourceRange: SourceRange = SourceRange(0, 0),
-    val diagramId: String,
-    val language: String = "mermaid",
-    val previewLabel: String? = null
-) : BlockModel
-
 data class MathBlock(
     override val id: String,
     override val sourceRange: SourceRange,
@@ -94,6 +80,12 @@ data class SvgBlock(
     override val id: String,
     override val sourceRange: SourceRange,
     val svgContent: String
+) : BlockModel
+
+data class MermaidBlock(
+    override val id: String,
+    override val sourceRange: SourceRange,
+    val diagramCode: String
 ) : BlockModel
 
 data class ImageBlock(

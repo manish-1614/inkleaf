@@ -14,7 +14,7 @@
 
 ## 3. WebView Sandboxing
 
-For WebView instances used as rich rendering fallback islands (Mermaid / KaTeX):
+For WebView instances used as rich rendering fallback islands (KaTeX):
 - Disable network: `settings.blockNetworkLoads = true`
 - Disable file access where unnecessary: `settings.allowFileAccess = false`
 - Disable JavaScript interface binding to arbitrary Java objects.

@@ -36,12 +36,12 @@ Inkleaf (Native Markdown Reader for Android, Kotlin + Jetpack Compose) crashes a
 **Plans**: TBD
 
 ### Phase 3: Rendering Performance
-**Goal**: Remove scroll-hot-path work: remember-cached syntax highlighting, Mermaid/KaTeX WebView virtualization + pooling, debounced off-main-thread search.
+**Goal**: Remove scroll-hot-path work: remember-cached syntax highlighting, KaTeX WebView virtualization + pooling, debounced off-main-thread search.
 **Depends on**: Phase 2
 **Requirements**: PERF-06, PERF-07, PERF-08
 **Success Criteria**:
 1. Flinging through code-heavy documents shows no regex rescans per frame (highlight cached per block+query)
-2. Rapid fling past many diagrams does not spawn/destroy WebViews per block beyond pool size
+2. Rapid fling past many math blocks does not spawn/destroy WebViews per block beyond pool size
 3. Search typing does not scan all blocks on the main thread per keystroke
 4. `gradlew compileDebugKotlin` passes
 **Plans**: TBD
@@ -53,5 +53,5 @@ Inkleaf (Native Markdown Reader for Android, Kotlin + Jetpack Compose) crashes a
 **Success Criteria**:
 1. Recents entries containing `|` in URIs/names round-trip intact
 2. Scroll position persists accurately after reading session ends
-3. Full regression checklist passes: open 5 MB cold, TOC jump to bottom, rapid fling past diagrams, rotate mid-read, process-death restore
+3. Full regression checklist passes: open 5 MB cold, TOC jump to bottom, rapid fling past rich blocks, rotate mid-read, process-death restore
 **Plans**: TBD

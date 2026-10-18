@@ -16,7 +16,7 @@ class CodeLanguageTest {
         assertNull(normalizeCodeLanguage(null))
         assertNull(normalizeCodeLanguage(""))
         assertNull(normalizeCodeLanguage("plain text"))
-        assertNull(normalizeCodeLanguage("mermaid"))
+        assertNull(normalizeCodeLanguage("unknown-dsl"))
         assertNull(normalizeCodeLanguage("diagram"))
         assertNull(normalizeCodeLanguage("custom-dsl"))
     }

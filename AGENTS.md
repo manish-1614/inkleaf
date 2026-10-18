@@ -25,7 +25,7 @@ C:/Luminary/Projects/inkleaf/
 │   │   └── security_and_privacy.md              → Zero-network, SVG & WebView sandbox rules
 │   └── skills/
 │       ├── inkleaf-env-setup/                   → Tooling & SDK setup skill
-│       └── inkleaf-phase0-spike/                → Mermaid feasibility & block AST spike skill
+│       └── inkleaf-phase0-spike/                → Architecture & block AST spike skill
 ├── scripts/
 │   ├── setup-environment.ps1                    → PowerShell script for JDK 17 & Android SDK
 │   └── setup-environment.cmd                    → CMD launcher script
@@ -56,17 +56,16 @@ When delegating tasks or spawning subagents, match work to these specialized rol
 - **Key Task**: Ensure native reading ergonomics with zero layout shift and smooth scroll performance.
 
 ### 4. `Security & Sandbox Specialist`
-- **Focus**: Local-only SAF document access, strict offline WebView configuration for Mermaid/KaTeX, SVG script sanitization, zero-network enforcement.
+- **Focus**: Local-only SAF document access, strict offline WebView configuration for KaTeX, SVG script sanitization, zero-network enforcement.
 - **Key Task**: Audit `AndroidManifest.xml` and WebView settings to guarantee zero document-originated network calls.
 
 ---
 
 ## 4. Key Workflows & Execution Gates
 
-- **Phase 0 (Weeks 1–2)**: Gate 0 — Architecture & Mermaid feasibility spike.
+- **Phase 0 (Weeks 1–2)**: Gate 0 — Architecture & Block Model verification.
 - **Phase 1 (Weeks 3–5)**: Gate 1 — Core Reader (SAF, open-with, native Markdown, TOC, search).
 - **Phase 2 (Weeks 6–7)**: Gate 2 — SVG & Plugin Kernel (Cache, scheduler, SVG sanitization).
-- **Phase 3 (Week 8)**: Gate 3 — Mermaid (Native / WebView strategy implementation).
-- **Phase 4 (Week 9)**: Gate 4 — KaTeX (Offline Math rendering).
-- **Phase 5 (Weeks 10–11)**: Gate 5 — Elite UX (Sepia theme, reading progress, recents, favorites).
-- **Phase 6 (Week 12)**: Gate 5 Sign-off → **v1.0 Product GA Candidate**.
+- **Phase 3 (Week 8)**: Gate 3 — KaTeX (Offline Math rendering).
+- **Phase 4 (Weeks 9–10)**: Gate 4 — Elite UX (Sepia theme, reading progress, recents, favorites).
+- **Phase 5 (Weeks 11–12)**: Gate 5 Sign-off → **v1.0 Product GA Candidate**.

@@ -13,7 +13,7 @@
 | Fixture | Inkleaf Markdown Rendering Test Suite |
 | Primary target | CommonMark + GFM |
 | Secondary target | GitHub-style extensions / common Markdown extensions |
-| Product-specific targets | Mermaid, KaTeX/LaTeX, SVG, callouts |
+| Product-specific targets | KaTeX/LaTeX, SVG, callouts, generic code fallback |
 | Expected behavior | Unsupported syntax should degrade gracefully rather than corrupt the document |
 | Main purpose | Rendering regression / compatibility testing |
 
@@ -678,7 +678,7 @@ def fibonacci(n):
   "name": "Inkleaf",
   "version": "1.0",
   "offline": true,
-  "features": ["markdown", "mermaid", "katex", "svg"]
+  "features": ["markdown", "katex", "svg"]
 }
 ```
 
@@ -765,7 +765,7 @@ This is intentionally a very long code line designed to test whether the rendere
 | ID | Name | Description | Owner | Status | Created | Updated |
 |---|---|---|---|---|---|---|
 | 001 | Renderer | Native Markdown renderer | Core | Active | 2026-08-01 | 2026-08-14 |
-| 002 | Mermaid | Diagram plugin | Plugin | Active | 2026-08-02 | 2026-08-14 |
+| 002 | Code | Code block formatter | Core | Active | 2026-08-02 | 2026-08-14 |
 | 003 | KaTeX | Math plugin | Plugin | Active | 2026-08-03 | 2026-08-14 |
 | 004 | SVG | Vector renderer | Plugin | Active | 2026-08-04 | 2026-08-14 |
 
@@ -1096,9 +1096,9 @@ The room number is 10.20.
 
 ---
 
-# 23. Mermaid — Inkleaf Plugin
+# 23. Mermaid - Generic Code Block Handling
 
-> **Expected Inkleaf behavior:** Mermaid blocks should be recognized by the Mermaid plugin. If native Mermaid is unsupported for a diagram type, the configured fallback should render it without breaking the surrounding document.
+> **Expected Inkleaf behavior:** Mermaid diagrams are NOT supported in Inkleaf. Fenced code blocks with the info string `mermaid` must be treated as ordinary code blocks under the app’s generic code-block behavior (syntax-highlighted or monospace text) without attempting diagram rendering, creating placeholder cards, or initiating network requests.
 
 ## 23.1 Flowchart
 
@@ -1342,7 +1342,7 @@ Expected behavior should follow Inkleaf's documented callout policy.
 - Offline
 - Native rendering
 - Plugin architecture
-- Mermaid
+- Generic code block fallback for mermaid
 - KaTeX
 - SVG
 - Accessibility
@@ -1471,7 +1471,7 @@ Expected behavior: deterministic heading IDs/anchors.
 
 ## 33.1 Internal Links
 
-[Jump to Mermaid](#23-mermaid--inkleaf-plugin)
+[Jump to Mermaid Code Blocks](#23-mermaid---generic-code-block-handling)
 
 [Jump to Math](#24-katex--latex--inkleaf-plugin)
 
@@ -1638,7 +1638,7 @@ Expected: no stack overflow, ANR, or crash.
 some source
 ```
 
-## 38.3 Malformed Mermaid
+## 38.3 Malformed Mermaid (Handled as Generic Code Block)
 
 ```mermaid
 this is not valid mermaid
@@ -1784,10 +1784,10 @@ $$
 | Component | Responsibility | Renderer |
 |---|---|---|
 | Markdown | Prose | Native |
-| Mermaid | Diagram | Native/WebView |
 | KaTeX | Math | Plugin |
 | SVG | Vector | Native |
 | Image | Media | Native image loader |
+| Code block | Code / Diagrams | Native syntax code block |
 
 ## Implementation
 
@@ -1807,7 +1807,7 @@ interface RenderPlugin {
 
 - [x] Parser integrated
 - [x] Block model implemented
-- [ ] Mermaid validation complete
+- [x] Generic code block fallback (including mermaid)
 - [ ] KaTeX integrated
 - [ ] SVG sanitization tested
 - [ ] Accessibility tested
@@ -1860,13 +1860,7 @@ interface RenderPlugin {
 
 - [ ] Footnotes
 - [ ] Callouts
-- [ ] Mermaid flowchart
-- [ ] Mermaid sequence
-- [ ] Mermaid class
-- [ ] Mermaid state
-- [ ] Mermaid ER
-- [ ] Mermaid Gantt
-- [ ] Mermaid pie
+- [ ] Generic code block rendering for mermaid blocks
 - [ ] KaTeX inline
 - [ ] KaTeX block
 - [ ] KaTeX matrices
@@ -1934,7 +1928,7 @@ When something fails, record it in this format:
 3. Footnotes, callouts, wiki links, embeds, highlight syntax, and similar features vary by Markdown implementation.
 4. A feature that is intentionally unsupported should be recorded as **UNSUPPORTED**, not automatically treated as a rendering bug.
 5. Unsafe HTML/SVG/URI content must be evaluated for **safe degradation**, not merely visual rendering.
-6. Mermaid and KaTeX should be tested as plugin-rendered blocks, including malformed input and fallback behavior.
+6. KaTeX should be tested as a plugin-rendered block, and unsupported fenced blocks like Mermaid should be verified to fall back cleanly to generic code blocks without error.
 7. A renderer that displays the correct text but breaks selection, scrolling, accessibility, zoom, or theme behavior should still be considered a failed test for that feature.
 8. For Inkleaf, **document-wide failure is never an acceptable result of a single malformed or unsupported rich block.**
 
@@ -1964,7 +1958,7 @@ If time is limited, test in this order:
 13. Footnotes
 14. Reference links
 15. HTML
-16. Mermaid
+16. Mermaid (as generic code block)
 17. KaTeX
 18. SVG
 19. Callouts
@@ -1983,7 +1977,7 @@ If time is limited, test in this order:
 ### P1 — Failure/security
 
 28. Broken images
-29. Malformed Mermaid
+29. Malformed Mermaid (as generic code block)
 30. Malformed KaTeX
 31. Malicious SVG
 32. Script/event-handler HTML

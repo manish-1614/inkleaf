@@ -35,7 +35,7 @@ Inkleaf enforces a strictly decoupled block-oriented rendering pipeline:
 To guarantee smooth reading performance:
 1. **P0 (Highest)**: Native prose (paragraphs, headings, lists, blockquotes). Visualized instantly.
 2. **P1 (Medium)**: Local SVG images, code syntax highlighting, native callout decorations.
-3. **P2 (Deferred)**: Heavy rich blocks (Mermaid diagrams, KaTeX math rendering, WebView islands).
+3. **P2 (Deferred)**: Heavy rich blocks (KaTeX math rendering, WebView islands).
 
 Off-screen blocks outside the current viewport threshold should defer high-cost rendering jobs until scrolled into range.
 

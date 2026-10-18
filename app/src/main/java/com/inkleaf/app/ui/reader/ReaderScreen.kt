@@ -29,7 +29,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.inkleaf.app.data.diagram.DiagramRepository
 import com.inkleaf.app.data.preferences.ReaderPreferencesRepository
 import com.inkleaf.app.data.saf.DocumentMetadata
 import com.inkleaf.app.data.saf.SafDocumentRepository
@@ -59,7 +58,6 @@ fun ReaderScreen(
     themeMode: ReaderThemeMode,
     onBack: () -> Unit,
     onThemeChange: ((ReaderThemeMode) -> Unit)? = null,
-    onDiagramClick: ((diagramId: String) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val coroutineScope = rememberCoroutineScope()
@@ -83,8 +81,6 @@ fun ReaderScreen(
         try {
             // Single-pass streaming read & SHA-256 fingerprinting
             val loaded = safRepository.loadDocument(documentUri)
-            // Reset in-memory diagram repository lifecycle to match document fingerprint
-            DiagramRepository.getInstance().resetForDocument(loaded.metadata.fingerprint)
             // Offload parsing and heading index generation to Dispatchers.Default
             val parsed = withContext(Dispatchers.Default) {
                 MarkdownBlockParser().parseDocument(loaded.content)
@@ -436,8 +432,7 @@ fun ReaderScreen(
                                     BlockItemPresenter(
                                         block = block,
                                         searchQuery = searchQuery,
-                                        themeMode = themeMode,
-                                        onDiagramClick = { diagramId -> onDiagramClick?.invoke(diagramId) }
+                                        themeMode = themeMode
                                     )
                                 }
 
@@ -496,9 +491,9 @@ private fun BlockModel.containsText(query: String): Boolean = when (this) {
     is HeadingBlock -> text.contains(query, true)
     is ParagraphBlock -> text.contains(query, true)
     is CodeBlock -> code.contains(query, true)
+    is MermaidBlock -> diagramCode.contains(query, true)
     is ListItemBlock -> text.contains(query, true) || children.any { it.containsText(query) }
     is CalloutBlock -> children.any { it.containsText(query) }
     is TableBlock -> headers.any { it.text.contains(query, true) } || rows.any { r -> r.any { it.text.contains(query, true) } }
-    is DiagramPlaceholderBlock -> previewLabel?.contains(query, true) == true || language.contains(query, true)
     else -> false
 }

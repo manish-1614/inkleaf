@@ -424,7 +424,7 @@ Log inside `openDocument()` right before `openInputStream`. Manual procedure:
 Code inspection: grep confirms `content`/`LoadedDocument.content` is never assigned to a VM field or UiState property; only passed as parse argument. Optional: Android Studio Memory Profiler — capture heap after opening 5 MB doc, search for retained `String` of doc length; expect absent.
 
 ### Behavior preservation checklist (criterion #5)
-Manual pass on a large GFM doc with headings, tables, code fences, mermaid/math placeholders:
+Manual pass on a large GFM doc with headings, tables, code fences, math placeholders:
 - TOC drawer opens, headings listed, jump works (short animate, long instant)
 - Search finds matches, next/previous cycles and scrolls
 - Light/Dark/Sepia themes switch live

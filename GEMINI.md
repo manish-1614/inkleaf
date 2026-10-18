@@ -47,7 +47,7 @@ inkleaf/
 │       │       ├── theme/       → Light, Dark, Sepia/Paper Compose typography & colors
 │       │       ├── home/        → Open Markdown, Recents, Favorites screen
 │       │       └── reader/      → Block-oriented Compose reader, TOC, Search, Progress
-│       └── res/                 → Vector drawables, raw assets (KaTeX, Mermaid bundle)
+│       └── res/                 → Vector drawables, raw assets (KaTeX bundle)
 ├── build.gradle.kts             → Root build script
 ├── settings.gradle.kts          → Project settings
 └── gradle.properties            → JVM & AndroidX properties
@@ -60,16 +60,16 @@ inkleaf/
 1. **Zero Database Server / Local-Only Persistence**:
    - No DB server (Postgres, MySQL, Firebase, Supabase).
    - No SQLite/Room database in v1.0 unless explicitly approved.
-   - All persistence uses Jetpack DataStore for preferences/reading position and a bounded Disk LRU cache for rendered diagram/math block artifacts.
+   - All persistence uses Jetpack DataStore for preferences/reading position and a bounded Disk LRU cache for rendered math block artifacts.
 2. **Block-Oriented Hybrid Rendering Kernel**:
    - No single renderer owns the document. Markdown source → Parser → AST → `BlockModel` → Renderer Selection → `RenderArtifact` → Compose Presenter.
-   - Native prose (paragraphs, headings, lists) paints first. Rich blocks (Mermaid, KaTeX, SVG) render asynchronously without blocking text readability.
+   - Native prose (paragraphs, headings, lists) paints first. Rich blocks (KaTeX, SVG) render asynchronously without blocking text readability.
 3. **Strict Network Isolation (Privacy by Architecture)**:
    - `android.permission.INTERNET` must **NOT** be declared in `AndroidManifest.xml`.
    - WebView instances must have network access disabled (`settings.blockNetworkLoads = true`).
    - SVG renderer must sanitize external links, `<script>` tags, and remote image references.
 4. **Failure Isolation**:
-   - A plugin crash, render timeout, or malformed diagram must **NEVER** crash the app or blank out the document.
+   - A plugin crash, render timeout, or malformed block must **NEVER** crash the app or blank out the document.
    - Render failures fall back gracefully to `ErrorArtifact` or formatted raw Markdown code source.
 5. **Three Core Reader Themes**:
    - Light, Dark, and **Sepia / Paper** are first-class theme tokens. Theme changes must invalidate/update rendered artifacts cleanly without memory leaks.
@@ -101,4 +101,4 @@ inkleaf/
   - `BlockModel` sealed hierarchy compiled.
   - `RenderArtifact` types compiled.
   - `RenderPlugin` interface contract compiled.
-  - Native Mermaid feasibility spike script ready.
+  - Block parser and renderer contracts verified.
