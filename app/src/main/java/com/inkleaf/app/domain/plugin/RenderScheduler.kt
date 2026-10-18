@@ -13,7 +13,7 @@ enum class RenderPriority {
 class RenderScheduler(
     private val maxConcurrentP2Jobs: Int = 2
 ) {
-    // Semaphore to enforce global concurrency ceiling on heavy WebView/KaTeX jobs (P2)
+    // Semaphore to enforce global concurrency ceiling on heavy WebView/plugin jobs (P2)
     private val p2Semaphore = Semaphore(maxConcurrentP2Jobs)
 
     private val schedulerScope = CoroutineScope(Dispatchers.Default + SupervisorJob())

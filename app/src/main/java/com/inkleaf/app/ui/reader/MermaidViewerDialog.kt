@@ -396,6 +396,8 @@ fun MermaidViewerDialog(
                             WebView(context).apply {
                                 setLayerType(View.LAYER_TYPE_HARDWARE, null)
                                 setBackgroundColor(AndroidColor.TRANSPARENT)
+                                isVerticalScrollBarEnabled = false
+                                isHorizontalScrollBarEnabled = false
 
                                 val assetLoader = WebViewAssetLoader.Builder()
                                     .addPathHandler("/assets/", WebViewAssetLoader.AssetsPathHandler(context))

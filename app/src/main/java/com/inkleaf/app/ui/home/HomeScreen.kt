@@ -363,7 +363,7 @@ private fun HeroReadingCard(
             )
             Spacer(modifier = Modifier.height(6.dp))
             Text(
-                text = "Fast local CommonMark viewer with paper typography, KaTeX math formulas, and offline diagrams.",
+                text = "Fast local CommonMark viewer with paper typography and offline diagrams.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )

@@ -409,9 +409,18 @@ fun BlockItemPresenter(
                 }
             }
             is MathBlock -> {
-                KatexWebViewPresenter(
-                    latexFormula = block.latex,
-                    isInline = block.isInline
+                // Future enhancement: Math formula rendering.
+                // Display as styled code block.
+                val codeBlock = CodeBlock(
+                    id = block.id,
+                    sourceRange = block.sourceRange,
+                    language = "math",
+                    code = block.latex
+                )
+                BlockItemPresenter(
+                    block = codeBlock,
+                    searchQuery = searchQuery,
+                    themeMode = themeMode
                 )
             }
             is MermaidBlock -> {
